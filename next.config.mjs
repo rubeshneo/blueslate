@@ -5,9 +5,6 @@ const nextConfig = {
     // Tree-shake large icon and SDK packages at build time
     optimizePackageImports: ['lucide-react', 'groq-sdk'],
   },
-  // Disable file tracing — avoids a Next.js 14/Windows path issue during `npm run build`.
-  // Re-enable when deploying to Vercel (outputFileTracing: true is the default there).
-  outputFileTracing: false,
   // Allow scraping any franchise domain
   images: {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],

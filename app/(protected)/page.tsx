@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { CheckCircle2, Circle, Users, Brain, MessageSquare, Radio, ArrowRight, TrendingUp } from 'lucide-react'
@@ -43,6 +44,9 @@ const SETUP_STEPS = [
 ]
 
 export default async function DashboardPage() {
+  const cookieStore = cookies()
+  const hasTested = cookieStore.get(`playground_tested_${TENANT_ID}`)?.value === 'true'
+
   const supabase = createClient()
   await supabase.auth.getUser() // ensure session is validated
 
@@ -71,11 +75,12 @@ export default async function DashboardPage() {
 
   // Onboarding completion: map step id → boolean
   const DEFAULT_AGENT_NAMES = ['AI Receptionist', 'Blueslate AI']
+
   const completedSteps: Record<string, boolean> = {
     knowledge: (knowledgeCount ?? 0) > 0,
     identity: !DEFAULT_AGENT_NAMES.includes(tenantData?.agent_name ?? 'AI Receptionist'),
     voice: (totalCalls ?? 0) > 0,
-    test: false,
+    test: hasTested,
     live: (totalLeads ?? 0) > 0,
   }
   const setupComplete = Object.values(completedSteps).filter(Boolean).length

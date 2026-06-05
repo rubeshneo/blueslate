@@ -104,6 +104,7 @@ ${context}
         'X-Agent-Name': agentName,
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no',
+        'Set-Cookie': `playground_tested_${TENANT_ID}=true; Path=/; Max-Age=31536000; SameSite=Lax`,
       },
     })
   } catch (err) {
