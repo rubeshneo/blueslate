@@ -238,56 +238,65 @@ export default async function VoicePage() {
             </div>
           </div>
 
-          <div>
-            <p
-              className="font-display font-bold uppercase"
-              style={{ fontSize: '9px', letterSpacing: '0.2em', color: 'var(--text-3)', marginBottom: '10px' }}
-            >
-              Setup Steps
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-              {[
-                'Go to dashboard.vapi.ai → Assistants → your assistant',
-                `Set Server URL to: ${webhookUrl}`,
-                'Enable "End of Call Report" in Server Events',
-                `Set call metadata: { "tenant_id": "${TENANT_ID}" }`,
-                'Assign a phone number to the assistant',
-              ].map((text, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '12px',
-                    padding: '10px 0',
-                    borderBottom: i < 4 ? '1px solid var(--border)' : 'none',
-                  }}
-                >
-                  <span
-                    className="font-display font-bold"
+          {logs.length === 0 ? (
+            <div>
+              <p
+                className="font-display font-bold uppercase"
+                style={{ fontSize: '9px', letterSpacing: '0.2em', color: 'var(--text-3)', marginBottom: '10px' }}
+              >
+                Setup Steps
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                {[
+                  'Go to dashboard.vapi.ai → Assistants → your assistant',
+                  `Set Server URL to: ${webhookUrl}`,
+                  'Enable "End of Call Report" in Server Events',
+                  `Set call metadata: { "tenant_id": "${TENANT_ID}" }`,
+                  'Assign a phone number to the assistant',
+                ].map((text, i) => (
+                  <div
+                    key={i}
                     style={{
-                      width: '18px',
-                      height: '18px',
-                      background: 'var(--accent)',
-                      color: 'var(--bg)',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '8px',
-                      flexShrink: 0,
-                      letterSpacing: '0.04em',
-                      marginTop: '1px',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '10px 0',
+                      borderBottom: i < 4 ? '1px solid var(--border)' : 'none',
                     }}
                   >
-                    {i + 1}
-                  </span>
-                  <span className="font-body" style={{ fontSize: '11px', color: 'var(--text-2)', lineHeight: 1.5 }}>
-                    {text}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      className="font-display font-bold"
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        background: 'var(--accent)',
+                        color: 'var(--bg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '8px',
+                        flexShrink: 0,
+                        letterSpacing: '0.04em',
+                        marginTop: '1px',
+                      }}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="font-body" style={{ fontSize: '11px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                      {text}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0' }}>
+              <CheckCircle2 size={16} style={{ color: 'var(--live)' }} />
+              <span className="font-display font-bold uppercase" style={{ fontSize: '10px', letterSpacing: '0.1em', color: 'var(--live)' }}>
+                Webhook Successfully Connected
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
