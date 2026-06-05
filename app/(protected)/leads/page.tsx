@@ -7,7 +7,7 @@ import type { Lead } from '@/hooks/useRealtimeLeads'
 const TENANT_ID = process.env.TENANT_ID!
 
 export default async function LeadsPage() {
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('leads')
     .select('id, caller_name, caller_phone, core_interest, call_outcome, booking_slot, parsed_at')
     .eq('tenant_id', TENANT_ID)
