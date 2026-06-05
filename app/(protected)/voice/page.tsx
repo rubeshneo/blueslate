@@ -40,12 +40,16 @@ type CallLog = {
 }
 
 export default async function VoicePage() {
-  const { data: callLogs } = await supabaseAdmin
+  const { data: callLogs, error } = await supabaseAdmin
     .from('call_logs')
-    .select('id, vapi_call_id, caller_number, started_at, duration_seconds, status, created_at')
+    .select('id, vapi_call_id, caller_number, started_at, duration_seconds, status')
     .eq('tenant_id', TENANT_ID)
-    .order('created_at', { ascending: false })
+    .order('started_at', { ascending: false })
     .limit(50)
+
+  if (error) {
+    console.error('VOICE PAGE CALL LOGS ERROR:', error)
+  }
 
   const logs = (callLogs || []) as CallLog[]
   const webhookUrl = `${APP_URL}/api/webhooks/vapi`
@@ -371,12 +375,10 @@ export default async function VoicePage() {
                   return (
                     <tr
                       key={log.id}
+                      className="hover:bg-[var(--surface-2)] transition-colors duration-100"
                       style={{
                         borderBottom: idx < logs.length - 1 ? '1px solid var(--border)' : 'none',
-                        transition: 'background 0.1s',
                       }}
-                      onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
-                      onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
                     >
                       <td
                         className="font-display"
@@ -392,7 +394,7 @@ export default async function VoicePage() {
                       >
                         {log.started_at
                           ? new Date(log.started_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                          : new Date(log.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                          : 'Unknown Date'}
                       </td>
                       <td style={{ padding: '12px 20px' }}>
                         <span
