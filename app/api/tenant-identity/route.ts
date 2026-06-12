@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase'
 
-const TENANT_ID = process.env.TENANT_ID!
-
+import { getTenantId } from '@/lib/get-tenant'
 const PatchSchema = z.object({
   agent_name:     z.string().min(1).max(80).trim().optional(),
   agent_greeting: z.string().min(1).max(200).trim().optional(),
@@ -17,6 +16,7 @@ const PatchSchema = z.object({
 )
 
 export async function GET() {
+  const TENANT_ID = await getTenantId()
   const { data, error } = await supabaseAdmin
     .from('tenants')
     .select('agent_name, agent_greeting, name, slug')
@@ -28,6 +28,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const TENANT_ID = await getTenantId()
   const parsed = PatchSchema.safeParse(await req.json())
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })

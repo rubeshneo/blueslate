@@ -13,6 +13,7 @@ const STATUS_COLOR: Record<string, string> = {
   'in-progress': 'var(--warn)',
   missed:      'var(--warn)',
   failed:      'var(--danger)',
+  spam:        'var(--text-3)',
 }
 
 const STATUS_BG: Record<string, string> = {
@@ -20,6 +21,7 @@ const STATUS_BG: Record<string, string> = {
   'in-progress': 'rgba(255,170,0,0.08)',
   missed:      'rgba(255,170,0,0.08)',
   failed:      'rgba(255,51,51,0.08)',
+  spam:        'rgba(150,150,150,0.1)',
 }
 
 function formatDuration(seconds: number | null) {
@@ -370,8 +372,10 @@ export default async function VoicePage() {
               </thead>
               <tbody>
                 {logs.map((log, idx) => {
-                  const color = STATUS_COLOR[log.status] ?? 'var(--text-2)'
-                  const bg = STATUS_BG[log.status] ?? 'transparent'
+                  const isSpam = log.status === 'completed' && log.duration_seconds !== null && log.duration_seconds < 10
+                  const statusLabel = isSpam ? 'spam' : log.status
+                  const color = STATUS_COLOR[statusLabel] ?? 'var(--text-2)'
+                  const bg = STATUS_BG[statusLabel] ?? 'transparent'
                   return (
                     <tr
                       key={log.id}
@@ -420,9 +424,9 @@ export default async function VoicePage() {
                             color,
                           }}
                         >
-                          {log.status === 'completed' && <CheckCircle2 size={9} />}
-                          {log.status === 'failed' && <AlertCircle size={9} />}
-                          {log.status}
+                          {statusLabel === 'completed' && <CheckCircle2 size={9} />}
+                          {statusLabel === 'failed' && <AlertCircle size={9} />}
+                          {statusLabel}
                         </span>
                       </td>
                     </tr>

@@ -27,7 +27,13 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
   const isAuthRoute = pathname === '/login' || pathname === '/register'
-  const isPublic = isAuthRoute || pathname.startsWith('/api') || pathname.startsWith('/_next')
+  const isPublic = isAuthRoute || pathname.startsWith('/api') || pathname.startsWith('/_next') || pathname === '/landing'
+
+  if (!user && pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/landing'
+    return NextResponse.redirect(url)
+  }
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

@@ -6,8 +6,7 @@ import { createClient } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { CheckCircle2, Circle, Users, Brain, MessageSquare, Radio, ArrowRight, TrendingUp } from 'lucide-react'
 
-const TENANT_ID = process.env.TENANT_ID!
-
+import { getTenantId } from '@/lib/get-tenant'
 // ── Onboarding steps ──────────────────────────────────────────────────────────
 // Each step has a `check` that detects completion from live DB state.
 const SETUP_STEPS = [
@@ -44,11 +43,16 @@ const SETUP_STEPS = [
 ]
 
 export default async function DashboardPage() {
+  const supabase = createClient()
+  await supabase.auth.getUser() // ensure session is validated
+
+  // Dynamically resolve the tenant ID for the current authenticated user!
+  const TENANT_ID = await getTenantId()
+
   const cookieStore = cookies()
   const hasTested = cookieStore.get(`playground_tested_${TENANT_ID}`)?.value === 'true'
 
-  const supabase = createClient()
-  await supabase.auth.getUser() // ensure session is validated
+
 
   // ── Fetch all dashboard data in parallel ─────────────────────────────────
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString()

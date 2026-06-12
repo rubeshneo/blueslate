@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { syncKnowledgeToVapi } from '@/lib/vapi'
-
-const TENANT_ID = process.env.TENANT_ID!
+import { getTenantId } from '@/lib/get-tenant'
 
 export async function POST() {
   try {
+    const TENANT_ID = await getTenantId()
     const result = await syncKnowledgeToVapi(TENANT_ID)
     return NextResponse.json({ success: true, sourceCount: result.sourceCount })
   } catch (err) {

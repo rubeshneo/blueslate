@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, User, Bell, Settings, Brain, Phone, Users, BarChart2, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, User, Bell, Settings, Brain, Phone, Users, BarChart2, MessageSquare, Shield } from 'lucide-react'
 
 const mainNav = [
   { href: '/',          label: 'Dashboard',    icon: LayoutDashboard },
@@ -20,6 +20,10 @@ const accountNav = [
   { href: '/profile',       label: 'Profile',       icon: User },
   { href: '/notifications', label: 'Alerts',         icon: Bell },
   { href: '/settings',      label: 'Settings',       icon: Settings },
+]
+
+const adminNav = [
+  { href: '/admin', label: 'Admin Panel', icon: Shield },
 ]
 
 function NavItem({ href, label, icon: Icon }: { href: string; label: string; icon: React.ElementType }) {
@@ -89,6 +93,7 @@ export default function Sidebar() {
         <NavSection label="Overview" items={mainNav} />
         <NavSection label="Features" items={featureNav} />
         <NavSection label="Account"  items={accountNav} />
+        <NavSection label="Creator"  items={adminNav} />
       </nav>
 
       {/* Status footer */}

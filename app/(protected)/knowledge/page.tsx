@@ -2,10 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import KnowledgeScraper from '@/components/KnowledgeScraper'
 import { supabaseAdmin } from '@/lib/supabase'
-
-const TENANT_ID = process.env.TENANT_ID!
+import { getTenantId } from '@/lib/get-tenant'
 
 export default async function KnowledgePage() {
+  const TENANT_ID = await getTenantId()
+
   const { data: contexts } = await supabaseAdmin
     .from('knowledge_context')
     .select('id, source_url, scraped_at, structured_data')

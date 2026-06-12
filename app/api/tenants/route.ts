@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { getTenantId } from '@/lib/get-tenant'
 
-const TENANT_ID = process.env.TENANT_ID
-if (!TENANT_ID) throw new Error('TENANT_ID env var is required')
-
-// Scoped to the configured tenant — never exposes other tenants
+// Scoped to the current authenticated user's tenant
 export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from('tenants')
-    .select('id, name, slug, franchise_url, phone_number, vapi_agent_id, is_active, created_at')
-    .eq('id', TENANT_ID)
-    .single()
+  try {
+    const TENANT_ID = await getTenantId()
+    const { data, error } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, franchise_url, phone_number, vapi_agent_id, is_active, created_at')
+      .eq('id', TENANT_ID)
+      .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ data })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ data })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
 }

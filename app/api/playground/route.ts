@@ -2,8 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase'
 import { chatStream, MODEL_FAST } from '@/lib/claude'
-
-const TENANT_ID = process.env.TENANT_ID!
+import { getTenantId } from '@/lib/get-tenant'
 
 function buildContextBlock(d: Record<string, unknown>): string {
   const parts: string[] = []
@@ -39,6 +38,8 @@ const PlaygroundSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const TENANT_ID = await getTenantId()
+
     const parsed = PlaygroundSchema.safeParse(await req.json())
     if (!parsed.success) {
       return Response.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
         .single(),
     ])
 
-    const agentName     = tenant?.agent_name    ?? 'Blueslate AI'
+    const agentName     = tenant?.agent_name    ?? 'AI Receptionist'
     const agentGreeting = tenant?.agent_greeting ?? 'Hi! Thanks for calling. How can I help you today?'
 
     let context = 'No knowledge base has been added yet. Tell the user to go to the Knowledge page and scrape their franchise website first.'
