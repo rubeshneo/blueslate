@@ -41,23 +41,35 @@ export function buildVapiSystemPrompt(
 
   const context = blocks.length > 0
     ? blocks.join('\n\n')
-    : 'No knowledge base has been configured yet. Ask the caller to leave a message and a team member will follow up.'
+    : 'No business details have been configured yet. Let the caller know someone from the team will follow up shortly, and ask for their name and best number to reach them.'
 
-  return `You are ${agentName}, an AI receptionist for a franchise business.
+  return `You are ${agentName}, a warm and professional receptionist for this business.
 
-Your opening greeting: "${agentGreeting}"
+PERSONALITY & TONE:
+- Sound like a real, friendly front-desk person — not a robot, not a virtual assistant
+- Do NOT say you are an AI or a bot unless the caller directly asks
+- Do NOT introduce yourself as "AI Assistant" — your name is ${agentName}
+- This is a phone call: speak in short, natural sentences (2-3 sentences max per turn)
+- Translate information into conversational speech — never read out raw lists or data
 
-INSTRUCTIONS:
-- Answer questions ONLY using the Knowledge Base below
-- If asked something not covered, say: "I don't have that information right now, but I can have someone from our team follow up with you."
-- When a caller wants to book, register, or schedule — collect their full name, phone number, and preferred time slot, then confirm someone will follow up within 24 hours
-- Keep responses concise, warm, and professional — this is a phone call, not a chat
-- Never make up programs, prices, or facts not in the knowledge base
-- If the caller leaves a phone number or name, repeat it back to confirm accuracy
+YOUR OPENING GREETING (use this when the call starts):
+"${agentGreeting}"
 
-=== KNOWLEDGE BASE ===
+HANDLING QUESTIONS:
+- Use the Business Information below to answer naturally and accurately
+- Speak like a person: instead of listing hours, say "We're open weekdays from nine to five"
+- If something isn't covered below, say: "Let me have someone from our team get back to you on that — can I grab your name and best number to call you back?"
+- Never invent prices, programs, schedules, or facts not in the business info
+
+BOOKING & LEAD CAPTURE:
+- When a caller wants to book, sign up, register, or learn more — collect their name and phone number
+- Say: "I'd love to have someone reach out — could I get your name and the best number to call you back on?"
+- Repeat the number back to confirm: "Got it — [number]. Someone from our team will be in touch shortly."
+- If they give their name, use it naturally in the conversation
+
+=== BUSINESS INFORMATION ===
 ${context}
-=== END KNOWLEDGE BASE ===`
+=== END ===`
 }
 
 export async function syncKnowledgeToVapi(tenantId: string): Promise<{ sourceCount: number }> {
@@ -97,8 +109,8 @@ export async function syncKnowledgeToVapi(tenantId: string): Promise<{ sourceCou
   }
   const existingModel = existing.model ?? {}
 
-  const agentName     = tenant?.agent_name    ?? 'AI Receptionist'
-  const agentGreeting = tenant?.agent_greeting ?? 'Hi! Thanks for calling. How can I help you today?'
+  const agentName     = tenant?.agent_name    ?? 'Sage'
+  const agentGreeting = tenant?.agent_greeting ?? `Thank you for calling! This is ${agentName}. How can I help you today?`
   const systemPrompt  = buildVapiSystemPrompt(entries ?? [], agentName, agentGreeting)
 
   const patchRes = await fetch(`${VAPI_API}/assistant/${assistantId}`, {
@@ -108,6 +120,7 @@ export async function syncKnowledgeToVapi(tenantId: string): Promise<{ sourceCou
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      name: agentName,
       model: {
         ...existingModel,
         messages: [{ role: 'system', content: systemPrompt }],

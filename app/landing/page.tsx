@@ -715,7 +715,7 @@ export default function LandingPage() {
         </p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 mb-14"
+        <div className="flex flex-col sm:flex-row items-center gap-4 mb-6"
           style={{ animation: 'fade-up 0.7s ease-out 0.4s both' }}>
           <Link href="/register" className="btn-primary py-4 px-8 text-xs w-full sm:w-auto justify-center group overflow-hidden relative shadow-[0_0_24px_rgba(232,93,63,0.35)] hover:shadow-[0_0_36px_rgba(232,93,63,0.55)]">
             <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
@@ -726,6 +726,18 @@ export default function LandingPage() {
             <Play size={13} className="mr-2 text-[var(--accent)] group-hover:animate-pulse" />
             Watch Live Demo
           </a>
+        </div>
+
+        {/* Phone CTA */}
+        <div className="flex items-center gap-2 mb-14 text-xs font-display text-[var(--text-3)]"
+          style={{ animation: 'fade-up 0.7s ease-out 0.5s both' }}>
+          <PhoneCall size={13} className="text-[var(--live)]" />
+          <span>Or call our AI live right now —</span>
+          <a href="tel:+17076699278"
+            className="text-[var(--accent)] font-bold hover:underline hover:text-[var(--accent-hover)] transition-colors tracking-wide">
+            +1 (707) 669-9278
+          </a>
+          <span className="hidden sm:inline text-[var(--text-3)]">· Available 24/7</span>
         </div>
 
         {/* Hero stats */}
@@ -857,12 +869,23 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-8 flex gap-3">
-                <a href="/register" className="btn-primary py-3 px-6 text-xs group overflow-hidden relative inline-flex items-center">
-                  <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
-                  Get This For My Franchise
-                  <ArrowRight size={14} className="ml-2 group-hover:translate-x-1 transition-transform" />
-                </a>
+              <div className="mt-8 flex flex-col gap-3">
+                <div className="flex gap-3">
+                  <a href="/register" className="btn-primary py-3 px-6 text-xs group overflow-hidden relative inline-flex items-center">
+                    <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
+                    Get This For My Franchise
+                    <ArrowRight size={14} className="ml-2 group-hover:translate-x-1 transition-transform" />
+                  </a>
+                  <a href="tel:+17076699278"
+                    className="btn-ghost py-3 px-5 text-xs inline-flex items-center gap-2 hover:-translate-y-0.5 transition-all rounded-lg font-display font-bold uppercase tracking-widest">
+                    <PhoneCall size={13} className="text-[var(--live)]" />
+                    Call Now
+                  </a>
+                </div>
+                <p className="text-[10px] text-[var(--text-3)] font-display flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--live)] animate-pulse inline-block" />
+                  Live AI line — <a href="tel:+17076699278" className="text-[var(--accent)] font-bold hover:underline">+1 (707) 669-9278</a> · Available 24/7
+                </p>
               </div>
             </div>
             <div>
