@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error
 
-    // Push updated knowledge to Vapi assistant (non-blocking)
-    syncKnowledgeToVapi(tenantId).catch((e: Error) =>
+    // Refresh Blueslate demo assistant (non-blocking)
+    syncKnowledgeToVapi().catch((e: Error) =>
       console.warn('[Multimodal] Vapi sync skipped:', e.message)
     )
 

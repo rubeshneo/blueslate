@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
     // Update tenant franchise_url
     await supabaseAdmin.from('tenants').update({ franchise_url: url }).eq('id', tenant_id)
 
-    // Push updated knowledge to Vapi assistant (non-blocking)
-    syncKnowledgeToVapi(tenant_id).catch((e: Error) =>
+    // Refresh Blueslate demo assistant (non-blocking)
+    syncKnowledgeToVapi().catch((e: Error) =>
       console.warn('[Scrape] Vapi sync skipped:', e.message)
     )
 
