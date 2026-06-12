@@ -103,7 +103,7 @@ export default function AdminPage() {
       setSummary(data.summary)
       setTenants(data.tenants)
       setRecentLeads(data.recent_leads)
-    } catch (e) {
+    } catch {
       setError('Could not load admin data.')
     } finally {
       setLoading(false)
@@ -111,6 +111,7 @@ export default function AdminPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   if (loading) {

@@ -31,12 +31,6 @@ const SOURCE_LABEL: Record<string, string> = {
   callback:        'Website demo request',
 }
 
-const OUTCOME: Record<string, string> = {
-  newsletter:      'unknown',
-  access_request:  'unknown',
-  callback:        'unknown',
-}
-
 export async function POST(req: NextRequest) {
   try {
     const parsed = Schema.safeParse(await req.json())
@@ -116,10 +110,11 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, lead_id: lead.id })
-  } catch (err: any) {
-    const message = err?.message || (err instanceof Error ? err.message : 'Unknown error')
-    const details = err?.details || ''
-    const code = err?.code || ''
+  } catch (err: unknown) {
+    const e = err as { message?: string; details?: string; code?: string }
+    const message = e?.message || (err instanceof Error ? err.message : 'Unknown error')
+    const details = e?.details || ''
+    const code = e?.code || ''
     console.error('[DEMO_REQUEST_ERROR]:', err)
     return NextResponse.json({ error: `${message} ${details} ${code}`.trim() }, { status: 500 })
   }

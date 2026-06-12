@@ -1,10 +1,9 @@
-import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase'
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'Rubesh.kumar@neoaistriq.com').toLowerCase()
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   // ── Auth guard — admin only ──────────────────────────────────────────────────
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
