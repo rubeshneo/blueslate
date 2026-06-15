@@ -447,8 +447,9 @@ function SageDemo() {
   const [obOtherInterest, setObOtherInterest] = useState('')
   const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'ended' | 'error'>('idle')
   const [obError,    setObError]    = useState('')
-  const [obCallId,   setObCallId]   = useState('')
-  const [callTimer,  setCallTimer]  = useState(90)
+  const [obCallId,      setObCallId]      = useState('')
+  const [obEndedReason, setObEndedReason] = useState('')
+  const [callTimer,     setCallTimer]     = useState(90)
 
   // Countdown when call is placed — auto-transitions to 'ended' at 0
   useEffect(() => {
@@ -474,9 +475,12 @@ function SageDemo() {
       try {
         const r = await fetch(`/api/demo-call/status?callId=${obCallId}`)
         if (!r.ok) return
-        const d = await r.json() as { status?: string; endedAt?: string }
+        const d = await r.json() as { status?: string; endedAt?: string; endedReason?: string }
         // endedAt is set by Vapi as soon as the call finishes, even before status updates
-        if (d.status === 'ended' || d.status === 'failed' || d.endedAt) setObState('ended')
+        if (d.status === 'ended' || d.status === 'failed' || d.endedAt) {
+          if (d.endedReason) setObEndedReason(d.endedReason)
+          setObState('ended')
+        }
       } catch { /* ignore polling errors */ }
     }, 5000)
     return () => clearInterval(id)
@@ -520,6 +524,7 @@ function SageDemo() {
     setObOtherInterest('')
     setObError('')
     setObCallId('')
+    setObEndedReason('')
   }
 
   // Effective interest: custom text > chip selection
@@ -703,8 +708,27 @@ function SageDemo() {
                 <Check size={24} className="text-[var(--live)]" />
               </div>
               <div className="text-center">
-                <p className="font-display font-bold text-sm text-[var(--text-1)] mb-1">Call with Sage ended</p>
-                <p className="text-xs text-[var(--text-3)]">Hope that answered your questions about Blueslate AI!</p>
+                <p className="font-display font-bold text-sm text-[var(--text-1)] mb-1">
+                  {obEndedReason && obEndedReason !== 'customer-ended-call' && obEndedReason !== 'assistant-ended-call'
+                    ? 'Call could not connect'
+                    : 'Call with Sage ended'}
+                </p>
+                {obEndedReason && obEndedReason !== 'customer-ended-call' && obEndedReason !== 'assistant-ended-call' ? (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-[var(--warn)]">
+                      {obEndedReason.includes('not-reachable') || obEndedReason.includes('failed-to-connect')
+                        ? 'Your carrier blocked the call — this is common with Twilio trial accounts for unverified numbers.'
+                        : obEndedReason.includes('did-not-answer')
+                          ? 'Call rang but wasn\'t answered — try again.'
+                          : `Call ended early (${obEndedReason})`}
+                    </p>
+                    {(obEndedReason.includes('not-reachable') || obEndedReason.includes('failed-to-connect')) && (
+                      <p className="text-[10px] text-[var(--text-3)]">Try calling us instead → <a href="tel:+17076699278" className="text-[var(--accent)] font-bold">+1 (707) 669-9278</a></p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--text-3)]">Hope that answered your questions about Blueslate AI!</p>
+                )}
               </div>
 
               {/* Lead confirmation */}
