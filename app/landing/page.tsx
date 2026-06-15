@@ -495,12 +495,15 @@ function SageDemo() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)] border-b border-[var(--border)]">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-[var(--live)] animate-pulse" />
-          <span className="font-display font-bold text-[10px] uppercase tracking-widest text-[var(--text-2)]">Live Demo</span>
+          <div className="w-6 h-6 rounded-full bg-[var(--accent)] flex items-center justify-center">
+            <Bot size={11} className="text-white" />
+          </div>
+          <span className="font-display font-bold text-[11px] text-[var(--text-1)]">Sage</span>
+          <span className="font-display text-[10px] text-[var(--text-3)]">· AI Receptionist</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Bot size={12} className="text-[var(--accent)]" />
-          <span className="font-display text-[9px] uppercase tracking-widest text-[var(--accent)] font-bold">Sage AI</span>
+          <span className="w-2 h-2 rounded-full bg-[var(--live)] animate-pulse" />
+          <span className="font-display text-[9px] uppercase tracking-widest text-[var(--live)] font-bold">Online</span>
         </div>
       </div>
 
@@ -968,7 +971,7 @@ export default function LandingPage() {
       </div>
 
       {/* ── Navbar ── */}
-      <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrolled ? 'bg-[var(--surface)]/90 backdrop-blur-xl border-b border-[var(--border)] shadow-[var(--shadow-sm)]' : 'bg-transparent'}`}>
+      <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrolled ? 'bg-[var(--surface)] border-b border-[var(--border)] shadow-[var(--shadow-sm)]' : 'bg-transparent'}`}>
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/landing" className="flex items-center gap-3 group">
