@@ -427,6 +427,342 @@ function VoiceAgent() {
   )
 }
 
+type DemoTab = 'browser' | 'inbound' | 'outbound'
+
+const INTEREST_OPTIONS = [
+  'Pricing & plans',
+  'Multi-location setup',
+  'Lead capture demo',
+  'How fast can I go live?',
+  'Replacing my receptionist',
+]
+
+function SageDemo() {
+  const [tab, setTab] = useState<DemoTab>('browser')
+
+  // Outbound call state
+  const [obName,     setObName]     = useState('')
+  const [obPhone,    setObPhone]    = useState('')
+  const [obInterest, setObInterest] = useState('')
+  const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error'>('idle')
+  const [obError,    setObError]    = useState('')
+
+  // Step 1: collect → show preview lead card before calling
+  function previewLead(e: React.FormEvent) {
+    e.preventDefault()
+    if (!obPhone.trim()) return
+    setObState('preview')
+  }
+
+  async function confirmCall() {
+    setObState('loading')
+    setObError('')
+    try {
+      const res  = await fetch('/api/demo-call', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          phone:    obPhone.trim(),
+          name:     obName.trim() || undefined,
+          interest: obInterest.trim() || undefined,
+        }),
+      })
+      const json = await res.json() as { error?: string }
+      if (!res.ok) throw new Error(json.error ?? 'Call failed')
+      setObState('done')
+    } catch (err) {
+      setObError(err instanceof Error ? err.message : 'Something went wrong')
+      setObState('error')
+    }
+  }
+
+  function resetOutbound() {
+    setObState('idle')
+    setObPhone('')
+    setObName('')
+    setObInterest('')
+    setObError('')
+  }
+
+  const tabs: { id: DemoTab; label: string; sublabel: string }[] = [
+    { id: 'browser',  label: 'Browser',      sublabel: 'Mic + text' },
+    { id: 'inbound',  label: 'Call Sage',     sublabel: '707-669-9278' },
+    { id: 'outbound', label: 'Sage Calls You', sublabel: 'We dial you' },
+  ]
+
+  return (
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden shadow-[var(--shadow-lg)] flex flex-col select-none">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)] border-b border-[var(--border)]">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-[var(--live)] animate-pulse" />
+          <span className="font-display font-bold text-[10px] uppercase tracking-widest text-[var(--text-2)]">Live Demo</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Bot size={12} className="text-[var(--accent)]" />
+          <span className="font-display text-[9px] uppercase tracking-widest text-[var(--accent)] font-bold">Sage AI</span>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="grid grid-cols-3 border-b border-[var(--border)]">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`py-3 px-2 flex flex-col items-center gap-0.5 transition-all duration-200 text-center border-b-2 ${
+              tab === t.id
+                ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
+                : 'border-transparent hover:bg-[var(--surface-2)]'
+            }`}
+          >
+            <span className={`font-display font-bold text-[10px] uppercase tracking-widest transition-colors ${
+              tab === t.id ? 'text-[var(--accent)]' : 'text-[var(--text-2)]'
+            }`}>{t.label}</span>
+            <span className="font-display text-[9px] text-[var(--text-3)]">{t.sublabel}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Browser voice demo ── */}
+      {tab === 'browser' && <VoiceAgent />}
+
+      {/* ── Tab: Inbound — call the number ── */}
+      {tab === 'inbound' && (
+        <div className="flex flex-col gap-5 px-6 py-8">
+          {/* Phone + call button */}
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-16 h-16 rounded-full bg-[var(--live)]/10 border border-[var(--live)]/30 flex items-center justify-center">
+              <Phone size={28} className="text-[var(--live)]" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--live)] animate-pulse" />
+              <span className="font-display font-bold text-[10px] uppercase tracking-widest text-[var(--live)]">Live line · Sage answers instantly</span>
+            </div>
+            <a
+              href="tel:+17076699278"
+              className="font-display font-bold text-3xl tracking-tight text-[var(--text-1)] hover:text-[var(--accent)] transition-colors"
+            >
+              +1 (707) 669-9278
+            </a>
+            <a
+              href="tel:+17076699278"
+              className="btn-primary py-3 px-8 text-xs flex items-center gap-2 shadow-[0_0_20px_rgba(232,93,63,0.3)]"
+            >
+              <PhoneCall size={14} /> Call Now — It&apos;s Live
+            </a>
+          </div>
+
+          {/* What Sage will collect — live preview of the lead capture loop */}
+          <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)]">
+              <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--text-3)]">
+                What Sage collects during your call
+              </p>
+            </div>
+            <div className="p-4 space-y-2">
+              {[
+                { field: 'Name',       value: 'Asked naturally mid-conversation' },
+                { field: 'Phone',      value: 'Confirmed by repeating it back' },
+                { field: 'Interest',   value: 'Inferred from what you ask' },
+                { field: 'Follow-up',  value: 'Logged to dashboard instantly' },
+              ].map(({ field, value }) => (
+                <div key={field} className="flex items-start gap-3">
+                  <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--accent)] w-20 shrink-0 pt-0.5">{field}</span>
+                  <span className="text-[11px] text-[var(--text-3)] font-display">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* After-call follow-up note */}
+          <div className="flex items-start gap-3 px-4 py-3 bg-[var(--accent-tint)] border border-[var(--accent)]/20 rounded-xl">
+            <Zap size={13} className="text-[var(--accent)] shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[var(--text-2)] leading-relaxed">
+              After your call ends, Sage auto-logs your details to the lead dashboard. The team sees your name, interest, and transcript in under 60 seconds — no human needed.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Outbound — Sage calls the visitor ── */}
+      {tab === 'outbound' && (
+        <div className="flex flex-col px-6 py-7 gap-5">
+
+          {/* Done state — ringing animation + lead card */}
+          {obState === 'done' && (
+            <div className="flex flex-col gap-4" style={{ animation: 'fade-up 0.3s ease-out both' }}>
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="w-16 h-16 rounded-full bg-[var(--live)]/10 border border-[var(--live)]/30 flex items-center justify-center">
+                  <PhoneCall size={28} className="text-[var(--live)]" style={{ animation: 'mic-ring 1.2s ease-out infinite' }} />
+                </div>
+                <div className="text-center">
+                  <p className="font-display font-bold text-[var(--live)] uppercase tracking-widest text-[11px] mb-1">Incoming call!</p>
+                  <p className="font-display font-bold text-lg text-[var(--text-1)]">Sage is dialing {obPhone}</p>
+                  <p className="text-xs text-[var(--text-3)] mt-1">Pick up — Sage already knows your context</p>
+                </div>
+              </div>
+
+              {/* Lead card preview — what Sage captured before even calling */}
+              <div className="border border-[var(--live)]/30 rounded-xl overflow-hidden bg-[var(--live)]/5">
+                <div className="px-4 py-2.5 bg-[var(--live)]/10 border-b border-[var(--live)]/20 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--live)] animate-pulse" />
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--live)]">Lead captured — visible in dashboard now</p>
+                </div>
+                <div className="p-4 space-y-2.5">
+                  {[
+                    { label: 'Name',     val: obName.trim()     || '(Sage will ask on call)' },
+                    { label: 'Phone',    val: obPhone.trim() },
+                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify on call)' },
+                    { label: 'Source',   val: 'Landing page demo' },
+                    { label: 'Status',   val: 'Call placed — awaiting response' },
+                  ].map(({ label, val }) => (
+                    <div key={label} className="flex items-start gap-3">
+                      <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--live)]/70 w-16 shrink-0 pt-0.5">{label}</span>
+                      <span className="text-[11px] text-[var(--text-1)] font-display">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button onClick={resetOutbound}
+                className="text-[10px] font-display font-bold uppercase tracking-widest text-[var(--text-3)] hover:text-[var(--accent)] transition-colors underline text-center">
+                Request another call
+              </button>
+            </div>
+          )}
+
+          {/* Preview state — show lead card before confirming call */}
+          {obState === 'preview' && (
+            <div className="flex flex-col gap-4" style={{ animation: 'fade-up 0.25s ease-out both' }}>
+              <div>
+                <p className="font-display font-bold text-sm text-[var(--text-1)] mb-1">Here&apos;s what Sage will know about you</p>
+                <p className="text-xs text-[var(--text-3)]">This is exactly what gets logged to the lead dashboard after your call.</p>
+              </div>
+
+              <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)]">
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--text-3)]">Lead record preview</p>
+                </div>
+                <div className="p-4 space-y-2.5">
+                  {[
+                    { label: 'Name',     val: obName.trim()     || '(Sage will ask on call)' },
+                    { label: 'Phone',    val: obPhone.trim() },
+                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify on call)' },
+                    { label: 'Source',   val: 'Landing page demo' },
+                  ].map(({ label, val }) => (
+                    <div key={label} className="flex items-start gap-3">
+                      <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--accent)] w-16 shrink-0 pt-0.5">{label}</span>
+                      <span className="text-[11px] text-[var(--text-1)] font-display">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {obError && (
+                <div className="flex items-center gap-1.5 text-[11px] text-[var(--danger)]">
+                  <AlertCircle size={12} className="shrink-0" /><span>{obError}</span>
+                </div>
+              )}
+
+              <button onClick={confirmCall} disabled={obState as string === 'loading'}
+                className="btn-primary py-3 flex items-center justify-center gap-2 text-xs">
+                <PhoneCall size={13} /> Confirm — Sage calls me now
+              </button>
+              <button onClick={() => setObState('idle')}
+                className="text-[10px] font-display text-[var(--text-3)] hover:text-[var(--accent)] transition-colors text-center uppercase tracking-widest font-bold underline">
+                Edit details
+              </button>
+            </div>
+          )}
+
+          {/* Loading */}
+          {obState === 'loading' && (
+            <div className="flex flex-col items-center gap-3 py-10">
+              <Loader2 size={28} className="text-[var(--accent)] animate-spin" />
+              <p className="font-display text-xs text-[var(--text-3)] uppercase tracking-widest">Placing your call…</p>
+            </div>
+          )}
+
+          {/* Idle — entry form */}
+          {(obState === 'idle' || obState === 'error') && (
+            <>
+              <div>
+                <p className="font-display font-bold text-sm text-[var(--text-1)] mb-1">Get a live call from Sage</p>
+                <p className="text-xs text-[var(--text-3)] leading-relaxed">
+                  Fill in your details. Sage calls you within seconds — already knowing your context. This is the same outbound flow your franchise customers experience.
+                </p>
+              </div>
+
+              <form onSubmit={previewLead} className="flex flex-col gap-3">
+                <input
+                  value={obName}
+                  onChange={e => setObName(e.target.value)}
+                  placeholder="Your name (optional — Sage will ask if missing)"
+                  className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-3)]"
+                />
+                <input
+                  value={obPhone}
+                  onChange={e => setObPhone(e.target.value)}
+                  type="tel"
+                  required
+                  placeholder="+1 (555) 000-0000 — Sage will call this number"
+                  className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-3)]"
+                />
+
+                {/* Interest chips */}
+                <div>
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--text-3)] mb-2">What are you interested in? (optional)</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {INTEREST_OPTIONS.map(opt => (
+                      <button
+                        type="button"
+                        key={opt}
+                        onClick={() => setObInterest(obInterest === opt ? '' : opt)}
+                        className={`px-2.5 py-1 text-[10px] font-display font-medium rounded-full border transition-all ${
+                          obInterest === opt
+                            ? 'bg-[var(--accent)] border-[var(--accent)] text-white'
+                            : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {obError && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-[var(--danger)]">
+                    <AlertCircle size={12} className="shrink-0" /><span>{obError}</span>
+                  </div>
+                )}
+
+                <button type="submit" disabled={!obPhone.trim()}
+                  className="btn-primary py-3 flex items-center justify-center gap-2 text-xs disabled:opacity-50">
+                  <PhoneCall size={13} /> Preview Lead &amp; Call Me
+                </button>
+              </form>
+
+              <div className="border-t border-[var(--border)] pt-4 space-y-2 text-[11px] text-[var(--text-3)] font-display">
+                {[
+                  'Real Vapi AI call — same stack as production franchises',
+                  'Sage confirms your details and logs the lead on the call',
+                  'Lead card appears in your dashboard after the call ends',
+                ].map((t, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Check size={11} className="text-[var(--live)] shrink-0" />
+                    <span>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NewsletterForm() {
   const [email, setEmail] = useState('')
   const [state, setState] = useState<'idle' | 'loading' | 'done'>('idle')
@@ -889,7 +1225,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div>
-              <VoiceAgent />
+              <SageDemo />
             </div>
           </div>
         </div>
