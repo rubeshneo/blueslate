@@ -160,9 +160,9 @@ function getInterestOpener(interest: string): string {
   if (i.includes('recept'))    return "Blueslate replaces the need for a human to answer the phone. The AI handles every call 24/7 — after hours, weekends, peak times — and captures every lead automatically."
   // "What is Blueslate" / general usefulness questions
   if (i.includes('what') || i.includes('blueslate') || i.includes('useful') || i.includes('use') || i.includes('help') || i.includes('work'))
-    return "Blueslate is an AI receptionist built for franchise businesses. It picks up every inbound call 24/7, captures the caller's name, phone, and interest automatically, and logs it to your lead dashboard in under 60 seconds — so you never miss a customer even when you're busy."
-  // Generic fallback — give a real answer, not a stall
-  return "Blueslate is an AI voice receptionist for franchise businesses. It handles every call 24/7, captures leads automatically, and most owners are live in under 30 minutes — completely free during the pilot."
+    return "That's a great question — Blueslate is an AI receptionist built for franchise businesses. It picks up every inbound call 24/7, captures the caller's name, phone, and interest automatically, and logs it to your lead dashboard in under 60 seconds — so you never miss a customer even when you're busy."
+  // Generic fallback — acknowledge then answer
+  return "That's a great question — Blueslate is an AI voice receptionist for franchise businesses. It handles every call 24/7, captures leads automatically, and most owners are live in under 30 minutes — completely free during the pilot."
 }
 
 // ── Demo system prompt — overrides the base assistant for outbound context ────
