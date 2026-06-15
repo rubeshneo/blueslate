@@ -93,12 +93,17 @@ async function resolveIntlPhoneId(apiKey: string, assistantId: string): Promise<
     throw new Error('Twilio credentials not configured for international calls')
   }
 
+  // Normalize to digits-only for comparison — Vapi may store numbers in a
+  // different format than the env var (e.g. with/without +, spaces, dashes)
+  const digitsOnly = (n: string) => n.replace(/\D/g, '')
+
   // Check if already imported into Vapi
-  const list     = await listVapiNumbers(apiKey)
-  const existing = list.find(n =>
-    n.provider === 'twilio' &&
-    (n.number === twilioNumber || n.twilioPhoneNumber === twilioNumber),
-  )
+  const list = await listVapiNumbers(apiKey)
+  const existing = list.find(n => {
+    if (n.provider !== 'twilio') return false
+    const stored = String(n.number ?? n.twilioPhoneNumber ?? '')
+    return digitsOnly(stored) === digitsOnly(twilioNumber)
+  })
   if (existing) {
     cachedIntlPhoneId = existing.id
     return existing.id
@@ -122,6 +127,20 @@ async function resolveIntlPhoneId(apiKey: string, assistantId: string): Promise<
     const errBody = await importRes.text().catch(() => '')
     let msg = ''
     try { msg = (JSON.parse(errBody) as { message?: string }).message ?? '' } catch { /* noop */ }
+
+    // If Vapi says it's already imported (duplicate), find it in the list by provider
+    const isDuplicate = importRes.status === 409
+      || msg.toLowerCase().includes('already')
+      || msg.toLowerCase().includes('exist')
+    if (isDuplicate) {
+      const retry = await listVapiNumbers(apiKey)
+      const found = retry.find(n => n.provider === 'twilio')
+      if (found) {
+        cachedIntlPhoneId = found.id
+        return found.id
+      }
+    }
+
     throw new Error(msg || `Could not import Twilio number into Vapi (${importRes.status})`)
   }
 
