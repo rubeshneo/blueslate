@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { scrapeUrl } from '@/lib/scraper'
 import { extractKnowledge, extractKnowledgeSocial } from '@/lib/claude'
 import { supabaseAdmin } from '@/lib/supabase'
-import { syncKnowledgeToVapi } from '@/lib/vapi'
+import { syncTenantKnowledgeToVapi } from '@/lib/vapi'
 
 const ScrapeSchema = z.object({
   url:       z.string().min(1, 'URL is required').max(2000),
@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
     // Update tenant franchise_url
     await supabaseAdmin.from('tenants').update({ franchise_url: url }).eq('id', tenant_id)
 
-    // Refresh Blueslate demo assistant (non-blocking)
-    syncKnowledgeToVapi().catch((e: Error) =>
+    // Refresh tenant's Vapi assistant with latest knowledge (non-blocking)
+    syncTenantKnowledgeToVapi(tenant_id).catch((e: Error) =>
       console.warn('[Scrape] Vapi sync skipped:', e.message)
     )
 

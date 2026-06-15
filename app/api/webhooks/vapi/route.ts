@@ -19,17 +19,35 @@ function verifyVapiSignature(rawBody: string, signature: string | null): boolean
   }
 }
 
-// ── Fallback tenant resolution ─────────────────────────────────────────────
-// Vapi metadata may omit tenant_id (misconfigured assistant, webhook replay, etc.).
-// Rather than hard-failing with a 400, resolve against the configured default tenant
-// to prevent the call log from being silently discarded.
+// ── Tenant resolution ──────────────────────────────────────────────────────
+// Resolution order:
+//   1. assistantId lookup — each provisioned tenant owns exactly one assistant
+//   2. metadata.tenant_id — legacy / manually configured assistants
+//   3. TENANT_ID env var — single-tenant / dev deployments
+//   4. First active tenant in DB — last resort to avoid silently dropping calls
 async function resolveTenantId(
+  assistantId:  string | null,
   fromMetadata: string | null,
   vapiCallId:   string | null,
 ): Promise<string | null> {
+  // Attempt 0: look up tenant by their provisioned assistant (preferred multi-tenant path)
+  if (assistantId) {
+    const { data: byAssistant } = await supabaseAdmin
+      .from('tenants')
+      .select('id')
+      .eq('vapi_agent_id', assistantId)
+      .limit(1)
+      .maybeSingle()
+
+    if (byAssistant?.id) {
+      return byAssistant.id
+    }
+  }
+
+  // Attempt 1: metadata.tenant_id (legacy / manually configured)
   if (fromMetadata) return fromMetadata
 
-  // Attempt 1: env-var default (single-tenant deployments or dev)
+  // Attempt 2: env-var default (single-tenant deployments or dev)
   const envDefault = process.env.TENANT_ID ?? null
   if (envDefault) {
     console.warn(
@@ -39,7 +57,7 @@ async function resolveTenantId(
     return envDefault
   }
 
-  // Attempt 2: first active tenant in the database (last resort)
+  // Attempt 3: first active tenant in the database (last resort)
   const { data } = await supabaseAdmin
     .from('tenants')
     .select('id')
@@ -85,12 +103,13 @@ export async function POST(req: NextRequest) {
     const endedAt:      string = call?.endedAt          ?? null
     const callerNumber: string = call?.customer?.number ?? null
     const vapiCallId:   string = call?.id               ?? null
+    const assistantId:  string | null = call?.assistantId ?? null
 
     const rawTenantId: string | null =
       message.metadata?.tenant_id ?? call?.metadata?.tenant_id ?? null
 
     // ── Tenant resolution with structured fallback ─────────────────
-    const tenantId = await resolveTenantId(rawTenantId, vapiCallId)
+    const tenantId = await resolveTenantId(assistantId, rawTenantId, vapiCallId)
 
     if (!tenantId) {
       console.error('[Vapi] tenant_id unresolvable — no metadata, no env default, no active tenant', { vapiCallId })

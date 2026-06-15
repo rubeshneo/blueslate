@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { parseJson } from '@/lib/claude'
-import { syncKnowledgeToVapi } from '@/lib/vapi'
+import { syncTenantKnowledgeToVapi } from '@/lib/vapi'
 
 const GROQ_API_KEY   = process.env.GROQ_API_KEY!
 const VISION_MODEL   = 'meta-llama/llama-4-scout-17b-16e-instruct'
@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error
 
-    // Refresh Blueslate demo assistant (non-blocking)
-    syncKnowledgeToVapi().catch((e: Error) =>
+    // Refresh tenant's Vapi assistant with latest knowledge (non-blocking)
+    syncTenantKnowledgeToVapi(tenantId).catch((e: Error) =>
       console.warn('[Multimodal] Vapi sync skipped:', e.message)
     )
 

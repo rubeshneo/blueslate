@@ -1,3 +1,6 @@
+import { supabaseAdmin } from '@/lib/supabase'
+import { buildContextBlock, buildTenantSystemPrompt } from '@/lib/vapi-provisioning'
+
 const VAPI_API = 'https://api.vapi.ai'
 
 // This Vapi number (+17076699278) is Blueslate's company demo/onboarding line.
@@ -80,6 +83,90 @@ export async function syncKnowledgeToVapi(): Promise<{ synced: true }> {
         messages: [{ role: 'system', content: BLUESLATE_VAPI_SYSTEM_PROMPT }],
       },
       firstMessage: BLUESLATE_FIRST_MESSAGE,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+
+  if (!patchRes.ok) {
+    const err = await patchRes.text().catch(() => '')
+    throw new Error(`Vapi PATCH assistant ${patchRes.status}: ${err.slice(0, 300)}`)
+  }
+
+  return { synced: true }
+}
+
+// ── Per-tenant sync ───────────────────────────────────────────────────────────
+
+/**
+ * Sync a specific tenant's scraped knowledge into their own Vapi assistant.
+ * The tenant must already be provisioned (has vapi_agent_id).
+ */
+export async function syncTenantKnowledgeToVapi(tenantId: string): Promise<{ synced: true }> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
+
+  // ── 1. Fetch tenant details ────────────────────────────────────────────────
+  const { data: tenant, error: tenantErr } = await supabaseAdmin
+    .from('tenants')
+    .select('vapi_agent_id, agent_name, agent_greeting, name')
+    .eq('id', tenantId)
+    .single()
+
+  if (tenantErr || !tenant) throw new Error(`Tenant not found: ${tenantId}`)
+
+  const assistantId = tenant.vapi_agent_id as string | null
+  if (!assistantId) throw new Error('Tenant has no Vapi assistant — provision first')
+
+  const agentName = (tenant.agent_name as string | null) ?? 'Sage'
+  const greeting  = (tenant.agent_greeting as string | null)
+    ?? `Thank you for calling ${tenant.name}! This is ${agentName}. How can I help you today?`
+
+  // ── 2. Fetch tenant knowledge context ────────────────────────────────────
+  const { data: knowledgeRows } = await supabaseAdmin
+    .from('knowledge_context')
+    .select('structured_data')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+
+  const contextBlocks = (knowledgeRows ?? [])
+    .map((row) => {
+      const sd = row.structured_data
+      if (!sd || typeof sd !== 'object') return ''
+      return buildContextBlock(sd as Record<string, unknown>)
+    })
+    .filter(Boolean)
+
+  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, contextBlocks.join('\n\n'))
+
+  // ── 3. Fetch existing assistant to preserve model/voice settings ──────────
+  const getRes = await fetch(`${VAPI_API}/assistant/${assistantId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!getRes.ok) {
+    const err = await getRes.text().catch(() => '')
+    throw new Error(`Vapi GET assistant ${getRes.status}: ${err.slice(0, 200)}`)
+  }
+
+  const existing = await getRes.json() as {
+    model?: { provider?: string; model?: string; [key: string]: unknown }
+  }
+  const existingModel = existing.model ?? {}
+
+  // ── 4. PATCH assistant with updated system prompt ─────────────────────────
+  const patchRes = await fetch(`${VAPI_API}/assistant/${assistantId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization:  `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name:         `${tenant.name as string} — ${agentName}`,
+      firstMessage: greeting,
+      model: {
+        ...existingModel,
+        messages: [{ role: 'system', content: systemPrompt }],
+      },
     }),
     signal: AbortSignal.timeout(15_000),
   })

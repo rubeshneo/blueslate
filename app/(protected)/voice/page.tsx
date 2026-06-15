@@ -1,27 +1,26 @@
 export const dynamic = 'force-dynamic'
 
 import { supabaseAdmin } from '@/lib/supabase'
+import { getTenantId } from '@/lib/get-tenant'
 import { Phone, Mic, Clock, CheckCircle2, AlertCircle, Radio } from 'lucide-react'
 import VapiKnowledgeSync from '@/components/VapiKnowledgeSync'
 
-const TENANT_ID = process.env.TENANT_ID!
-const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL
 
 const STATUS_COLOR: Record<string, string> = {
-  completed:   'var(--live)',
+  completed:     'var(--live)',
   'in-progress': 'var(--warn)',
-  missed:      'var(--warn)',
-  failed:      'var(--danger)',
-  spam:        'var(--text-3)',
+  missed:        'var(--warn)',
+  failed:        'var(--danger)',
+  spam:          'var(--text-3)',
 }
 
 const STATUS_BG: Record<string, string> = {
-  completed:   'rgba(0,232,122,0.08)',
+  completed:     'rgba(0,232,122,0.08)',
   'in-progress': 'rgba(255,170,0,0.08)',
-  missed:      'rgba(255,170,0,0.08)',
-  failed:      'rgba(255,51,51,0.08)',
-  spam:        'rgba(150,150,150,0.1)',
+  missed:        'rgba(255,170,0,0.08)',
+  failed:        'rgba(255,51,51,0.08)',
+  spam:          'rgba(150,150,150,0.1)',
 }
 
 function formatDuration(seconds: number | null) {
@@ -42,10 +41,21 @@ type CallLog = {
 }
 
 export default async function VoicePage() {
+  const tenantId = await getTenantId()
+
+  // Fetch tenant info for the assistant ID card
+  const { data: tenant } = await supabaseAdmin
+    .from('tenants')
+    .select('vapi_agent_id, vapi_phone_number')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  const tenantAssistantId = (tenant?.vapi_agent_id as string | null) ?? null
+
   const { data: callLogs, error } = await supabaseAdmin
     .from('call_logs')
     .select('id, vapi_call_id, caller_number, started_at, duration_seconds, status')
-    .eq('tenant_id', TENANT_ID)
+    .eq('tenant_id', tenantId)
     .order('started_at', { ascending: false })
     .limit(50)
 
@@ -127,7 +137,7 @@ export default async function VoicePage() {
             className="font-display"
             style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '5px', wordBreak: 'break-all', lineHeight: 1.4 }}
           >
-            {VAPI_ASSISTANT_ID || 'Not configured'}
+            {tenantAssistantId ?? 'Not provisioned yet'}
           </p>
         </div>
 
@@ -168,7 +178,7 @@ export default async function VoicePage() {
         </div>
       </div>
 
-      {/* Knowledge → Vapi sync */}
+      {/* Provisioning + Knowledge → Vapi sync */}
       <VapiKnowledgeSync />
 
       {/* Webhook config */}
@@ -254,11 +264,11 @@ export default async function VoicePage() {
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                 {[
-                  'Go to dashboard.vapi.ai → Assistants → your assistant',
-                  `Set Server URL to: ${webhookUrl}`,
+                  'Provision your AI number above (one click)',
+                  `Set Server URL in Vapi dashboard to: ${webhookUrl}`,
                   'Enable "End of Call Report" in Server Events',
-                  `Set call metadata: { "tenant_id": "${TENANT_ID}" }`,
-                  'Assign a phone number to the assistant',
+                  'Assign your provisioned phone number to the assistant',
+                  'Route your business phone to your AI number',
                 ].map((text, i) => (
                   <div
                     key={i}
