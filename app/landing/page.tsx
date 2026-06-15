@@ -446,6 +446,20 @@ function SageDemo() {
   const [obInterest, setObInterest] = useState('')
   const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error'>('idle')
   const [obError,    setObError]    = useState('')
+  const [callTimer,  setCallTimer]  = useState(90)
+
+  // Countdown when call is placed — auto-reset after 90s
+  useEffect(() => {
+    if (obState !== 'done') return
+    setCallTimer(90)
+    const interval = setInterval(() => {
+      setCallTimer(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [obState])
 
   // Step 1: collect → show preview lead card before calling
   function previewLead(e: React.FormEvent) {
@@ -592,46 +606,66 @@ function SageDemo() {
       {tab === 'outbound' && (
         <div className="flex flex-col px-6 py-7 gap-5">
 
-          {/* Done state — ringing animation + lead card */}
+          {/* Done state — ringing + key-press tip + countdown */}
           {obState === 'done' && (
             <div className="flex flex-col gap-4" style={{ animation: 'fade-up 0.3s ease-out both' }}>
-              <div className="flex flex-col items-center gap-3 py-4">
-                <div className="w-16 h-16 rounded-full bg-[var(--live)]/10 border border-[var(--live)]/30 flex items-center justify-center">
-                  <PhoneCall size={28} className="text-[var(--live)]" style={{ animation: 'mic-ring 1.2s ease-out infinite' }} />
+
+              {/* Ringing header */}
+              <div className="flex flex-col items-center gap-2 pt-3">
+                <div className="w-14 h-14 rounded-full bg-[var(--live)]/10 border border-[var(--live)]/30 flex items-center justify-center">
+                  <PhoneCall size={24} className="text-[var(--live)]" style={{ animation: 'mic-ring 1.2s ease-out infinite' }} />
                 </div>
-                <div className="text-center">
-                  <p className="font-display font-bold text-[var(--live)] uppercase tracking-widest text-[11px] mb-1">Incoming call!</p>
-                  <p className="font-display font-bold text-lg text-[var(--text-1)]">Sage is calling {obPhone}</p>
-                  <p className="text-xs text-[var(--text-3)] mt-1">Pick up — you&apos;ll be connected to Sage instantly</p>
+                <p className="font-display font-bold text-[var(--live)] uppercase tracking-widest text-[10px]">Calling {obPhone}…</p>
+                {callTimer > 0
+                  ? <p className="font-display text-[10px] text-[var(--text-3)]">Ringing · auto-reset in {callTimer}s</p>
+                  : <p className="font-display text-[10px] text-[var(--warn)]">Call may have ended — see below</p>}
+              </div>
+
+              {/* KEY PRESS INSTRUCTION — carrier IVR in India */}
+              <div className="flex items-start gap-3 px-4 py-3 bg-[var(--warn)]/10 border border-[var(--warn)]/30 rounded-xl">
+                <AlertCircle size={14} className="text-[var(--warn)] shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-display font-bold text-[11px] text-[var(--warn)] mb-0.5">When you pick up — press any digit (1, 2, or 3)</p>
+                  <p className="text-[11px] text-[var(--text-3)] leading-relaxed">
+                    Your carrier may play &quot;press any key to accept.&quot; Say nothing — press a digit on your keypad. This connects you to Sage.
+                  </p>
                 </div>
               </div>
 
-              {/* Lead card preview — what Sage captured before even calling */}
+              {/* Lead card */}
               <div className="border border-[var(--live)]/30 rounded-xl overflow-hidden bg-[var(--live)]/5">
-                <div className="px-4 py-2.5 bg-[var(--live)]/10 border-b border-[var(--live)]/20 flex items-center gap-2">
+                <div className="px-4 py-2 bg-[var(--live)]/10 border-b border-[var(--live)]/20 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--live)] animate-pulse" />
-                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--live)]">Lead captured — visible in dashboard now</p>
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--live)]">Lead captured — in dashboard</p>
                 </div>
-                <div className="p-4 space-y-2.5">
+                <div className="p-4 space-y-2">
                   {[
-                    { label: 'Name',     val: obName.trim()     || '(Sage will ask on call)' },
+                    { label: 'Name',     val: obName.trim()     || '(Sage will ask)' },
                     { label: 'Phone',    val: obPhone.trim() },
-                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify on call)' },
+                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify)' },
                     { label: 'Source',   val: 'Landing page demo' },
-                    { label: 'Status',   val: 'Call placed — awaiting response' },
                   ].map(({ label, val }) => (
                     <div key={label} className="flex items-start gap-3">
-                      <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--live)]/70 w-16 shrink-0 pt-0.5">{label}</span>
+                      <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--live)]/70 w-16 shrink-0">{label}</span>
                       <span className="text-[11px] text-[var(--text-1)] font-display">{val}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <button onClick={resetOutbound}
-                className="text-[10px] font-display font-bold uppercase tracking-widest text-[var(--text-3)] hover:text-[var(--accent)] transition-colors underline text-center">
-                Request another call
-              </button>
+              {/* Fallback options */}
+              <div className="flex flex-col gap-2">
+                {callTimer === 0 && (
+                  <button onClick={() => setTab('browser')}
+                    className="btn-primary py-2.5 flex items-center justify-center gap-2 text-xs">
+                    <Mic size={13} /> Call didn&apos;t work? Try Browser Demo
+                  </button>
+                )}
+                <button onClick={resetOutbound}
+                  className="text-[10px] font-display font-bold uppercase tracking-widest text-[var(--text-3)] hover:text-[var(--accent)] transition-colors underline text-center">
+                  {callTimer > 0 ? 'Cancel & try again' : 'Try a different number'}
+                </button>
+              </div>
             </div>
           )}
 
