@@ -475,9 +475,8 @@ function SageDemo() {
       try {
         const r = await fetch(`/api/demo-call/status?callId=${obCallId}`)
         if (!r.ok) return
-        const d = await r.json() as { status?: string; endedAt?: string; endedReason?: string }
-        // endedAt is set by Vapi as soon as the call finishes, even before status updates
-        if (d.status === 'ended' || d.status === 'failed' || d.endedAt) {
+        const d = await r.json() as { status?: string; endedReason?: string }
+        if (d.status === 'ended' || d.status === 'failed') {
           if (d.endedReason) setObEndedReason(d.endedReason)
           setObState('ended')
         }

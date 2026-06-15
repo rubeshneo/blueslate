@@ -4,7 +4,6 @@ const VAPI_API = 'https://api.vapi.ai'
 
 type VapiCallStatus = {
   status?: string
-  endedAt?: string
   endedReason?: string
 }
 
@@ -25,7 +24,6 @@ export async function GET(req: NextRequest) {
   const data = await res.json() as VapiCallStatus
   return NextResponse.json({
     status:      data.status,
-    endedAt:     data.endedAt,
     endedReason: data.endedReason,
   })
 }
