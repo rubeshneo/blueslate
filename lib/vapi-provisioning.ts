@@ -88,37 +88,33 @@ type VapiPhoneNumberResponse = {
   [key: string]: unknown
 }
 
-/**
- * Provision a new Vapi assistant + phone number for a tenant.
- * Clones the model/voice settings from the demo assistant (VAPI_ASSISTANT_ID).
- * Saves vapi_agent_id, vapi_phone_number_id, vapi_phone_number to the tenants row.
- */
-export async function provisionTenantVapi(tenantId: string): Promise<{
-  assistantId: string
+export type ProvisionResult = {
+  assistantId:   string
   phoneNumberId: string
-  phoneNumber: string
-}> {
-  const apiKey      = process.env.VAPI_API_KEY
-  const demoId      = process.env.VAPI_ASSISTANT_ID
-  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
+  phoneNumber:   string
+}
+
+// ── Shared helper: create a Vapi assistant for a tenant ──────────────────────
+async function createAssistantForTenant(
+  tenantId: string,
+  apiKey:   string,
+): Promise<{ assistant: VapiAssistantResponse; greeting: string }> {
+  const demoId = process.env.VAPI_ASSISTANT_ID
   if (!demoId) throw new Error('VAPI_ASSISTANT_ID is not configured')
 
-  // ── 1. Fetch tenant details ────────────────────────────────────────────────
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
     .select('id, name, agent_name, agent_greeting')
     .eq('id', tenantId)
     .single()
 
-  if (tenantErr || !tenant) {
-    throw new Error(`Tenant not found: ${tenantId}`)
-  }
+  if (tenantErr || !tenant) throw new Error(`Tenant not found: ${tenantId}`)
 
   const agentName = (tenant.agent_name as string | null) ?? 'Sage'
   const greeting  = (tenant.agent_greeting as string | null)
     ?? `Thank you for calling ${tenant.name}! This is ${agentName}. How can I help you today?`
 
-  // ── 2. Fetch demo assistant to clone model + voice settings ───────────────
+  // Clone model/voice from demo assistant
   const demoRes = await fetch(`${VAPI_API}/assistant/${demoId}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
     signal: AbortSignal.timeout(15_000),
@@ -129,41 +125,33 @@ export async function provisionTenantVapi(tenantId: string): Promise<{
   }
   const demo = await demoRes.json() as VapiAssistantResponse
 
-  // ── 3. Fetch tenant knowledge context for the initial system prompt ────────
   const { data: knowledgeRows } = await supabaseAdmin
     .from('knowledge_context')
     .select('structured_data')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
 
-  const contextBlocks = (knowledgeRows ?? [])
+  const context = (knowledgeRows ?? [])
     .map((row) => {
       const sd = row.structured_data
-      if (!sd || typeof sd !== 'object') return ''
-      return buildContextBlock(sd as Record<string, unknown>)
+      return sd && typeof sd === 'object' ? buildContextBlock(sd as Record<string, unknown>) : ''
     })
     .filter(Boolean)
+    .join('\n\n')
 
-  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, contextBlocks.join('\n\n'))
-
-  // ── 4. Create a new Vapi assistant (cloning voice + model from demo) ───────
-  const existingModel = (demo.model ?? {}) as Record<string, unknown>
-  const existingVoice = (demo.voice ?? {}) as Record<string, unknown>
+  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, context)
 
   const createRes = await fetch(`${VAPI_API}/assistant`, {
     method: 'POST',
-    headers: {
-      Authorization:  `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name:         `${tenant.name} — ${agentName}`,
       firstMessage: greeting,
       model: {
-        ...existingModel,
+        ...((demo.model ?? {}) as Record<string, unknown>),
         messages: [{ role: 'system', content: systemPrompt }],
       },
-      voice: existingVoice,
+      voice: (demo.voice ?? {}) as Record<string, unknown>,
     }),
     signal: AbortSignal.timeout(15_000),
   })
@@ -173,47 +161,137 @@ export async function provisionTenantVapi(tenantId: string): Promise<{
     throw new Error(`Vapi POST assistant ${createRes.status}: ${err.slice(0, 300)}`)
   }
 
-  const newAssistant = await createRes.json() as VapiAssistantResponse
+  return { assistant: await createRes.json() as VapiAssistantResponse, greeting }
+}
 
-  // ── 5. Buy a phone number linked to the new assistant ─────────────────────
+// Persist provisioning result to DB
+async function saveTenantVapiConfig(
+  tenantId:      string,
+  assistantId:   string,
+  phoneNumberId: string,
+  phoneNumber:   string,
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('tenants')
+    .update({ vapi_agent_id: assistantId, vapi_phone_number_id: phoneNumberId, vapi_phone_number: phoneNumber })
+    .eq('id', tenantId)
+  if (error) throw error
+}
+
+// ── Mode 1: Buy a new Vapi-hosted phone number ────────────────────────────────
+export async function provisionTenantVapi(tenantId: string): Promise<ProvisionResult> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
+
+  const { assistant } = await createAssistantForTenant(tenantId, apiKey)
+
   const phoneRes = await fetch(`${VAPI_API}/phone-number/buy`, {
     method: 'POST',
-    headers: {
-      Authorization:  `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      provider:    'vapi',
-      areaCode:    '415',
-      assistantId: newAssistant.id,
-    }),
-    signal: AbortSignal.timeout(15_000),
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'vapi', areaCode: '415', assistantId: assistant.id }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!phoneRes.ok) {
+    // Clean up the assistant we just created
+    await fetch(`${VAPI_API}/assistant/${assistant.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }).catch(() => {})
     const err = await phoneRes.text().catch(() => '')
     throw new Error(`Vapi buy phone-number ${phoneRes.status}: ${err.slice(0, 300)}`)
   }
 
   const phoneData = await phoneRes.json() as VapiPhoneNumberResponse
+  await saveTenantVapiConfig(tenantId, assistant.id, phoneData.id, phoneData.number)
 
-  // ── 6. Persist to DB ───────────────────────────────────────────────────────
-  const { error: updateErr } = await supabaseAdmin
-    .from('tenants')
-    .update({
-      vapi_agent_id:        newAssistant.id,
-      vapi_phone_number_id: phoneData.id,
-      vapi_phone_number:    phoneData.number,
-    })
-    .eq('id', tenantId)
+  return { assistantId: assistant.id, phoneNumberId: phoneData.id, phoneNumber: phoneData.number }
+}
 
-  if (updateErr) throw updateErr
+// ── Mode 2: Import an existing Twilio number into Vapi ───────────────────────
+export async function importTwilioNumber(
+  tenantId:          string,
+  twilioAccountSid:  string,
+  twilioAuthToken:   string,
+  twilioNumber:      string,
+): Promise<ProvisionResult> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
 
-  return {
-    assistantId:   newAssistant.id,
-    phoneNumberId: phoneData.id,
-    phoneNumber:   phoneData.number,
+  const { assistant } = await createAssistantForTenant(tenantId, apiKey)
+
+  // Import the Twilio number into Vapi
+  const phoneRes = await fetch(`${VAPI_API}/phone-number`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider:         'twilio',
+      number:           twilioNumber,
+      twilioAccountSid,
+      twilioAuthToken,
+      assistantId:      assistant.id,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  })
+
+  if (!phoneRes.ok) {
+    await fetch(`${VAPI_API}/assistant/${assistant.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }).catch(() => {})
+    const err = await phoneRes.text().catch(() => '')
+    throw new Error(`Vapi import Twilio number ${phoneRes.status}: ${err.slice(0, 300)}`)
   }
+
+  const phoneData = await phoneRes.json() as VapiPhoneNumberResponse
+  await saveTenantVapiConfig(tenantId, assistant.id, phoneData.id, phoneData.number)
+
+  return { assistantId: assistant.id, phoneNumberId: phoneData.id, phoneNumber: phoneData.number }
+}
+
+// ── Mode 3: Use an existing Vapi phone number ID ──────────────────────────────
+export async function linkExistingVapiNumber(
+  tenantId:          string,
+  vapiPhoneNumberId: string,
+): Promise<ProvisionResult> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
+
+  const { assistant } = await createAssistantForTenant(tenantId, apiKey)
+
+  // Get the existing number's actual phone number string
+  const getNumRes = await fetch(`${VAPI_API}/phone-number/${vapiPhoneNumberId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!getNumRes.ok) {
+    await fetch(`${VAPI_API}/assistant/${assistant.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }).catch(() => {})
+    throw new Error(`Vapi phone number ${vapiPhoneNumberId} not found`)
+  }
+  const existingPhone = await getNumRes.json() as VapiPhoneNumberResponse
+
+  // Link the number to the new assistant
+  const patchRes = await fetch(`${VAPI_API}/phone-number/${vapiPhoneNumberId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assistantId: assistant.id }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!patchRes.ok) {
+    await fetch(`${VAPI_API}/assistant/${assistant.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }).catch(() => {})
+    const err = await patchRes.text().catch(() => '')
+    throw new Error(`Vapi PATCH phone-number ${patchRes.status}: ${err.slice(0, 300)}`)
+  }
+
+  await saveTenantVapiConfig(tenantId, assistant.id, vapiPhoneNumberId, existingPhone.number)
+
+  return { assistantId: assistant.id, phoneNumberId: vapiPhoneNumberId, phoneNumber: existingPhone.number }
 }
 
 // ── Outbound calls ────────────────────────────────────────────────────────────
