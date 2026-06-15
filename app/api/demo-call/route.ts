@@ -7,45 +7,127 @@ const Schema = z.object({
   interest: z.string().max(300).optional(),
 })
 
-const VAPI_API = 'https://api.vapi.ai'
+const VAPI_API    = 'https://api.vapi.ai'
+const VAPI_NUMBER = '+17076699278'
 
-// Cache the resolved phone number ID for the process lifetime (avoids repeated API calls)
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Normalize raw input to E.164 */
+function toE164(raw: string): string {
+  const clean = raw.replace(/[\s\-().]/g, '')
+  if (clean.startsWith('+')) return clean
+  if (/^[6-9]\d{9}$/.test(clean)) return `+91${clean}`   // India 10-digit
+  if (/^\d{10}$/.test(clean))     return `+1${clean}`    // US/CA 10-digit
+  if (/^1\d{10}$/.test(clean))    return `+${clean}`     // US with leading 1
+  return `+${clean}`
+}
+
+/** True if not US or Canada */
+function isInternational(e164: string): boolean {
+  return !e164.startsWith('+1')
+}
+
+/** Vapi phone number ID cache (avoids repeated list calls) */
 let cachedPhoneNumberId: string | null = null
+type VapiPhoneNumber = { id: string; assistantId?: string; [key: string]: unknown }
 
-type VapiPhoneNumber = { id: string; assistantId?: string; number?: string; [key: string]: unknown }
-
-async function resolvePhoneNumberId(apiKey: string, assistantId: string): Promise<string | null> {
-  // 1. Prefer explicit env var
+async function resolveVapiPhoneNumberId(apiKey: string, assistantId: string): Promise<string | null> {
   if (process.env.VAPI_DEMO_PHONE_ID) return process.env.VAPI_DEMO_PHONE_ID
-
-  // 2. Return cached value from a previous resolution
   if (cachedPhoneNumberId) return cachedPhoneNumberId
 
-  // 3. Auto-resolve: find the phone number linked to the demo assistant
   const res = await fetch(`${VAPI_API}/phone-number?limit=100`, {
     headers: { Authorization: `Bearer ${apiKey}` },
     signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) return null
 
-  const list = await res.json() as VapiPhoneNumber[]
-  const numbers = Array.isArray(list) ? list : (list as { results?: VapiPhoneNumber[] }).results ?? []
-
-  // Match by assistantId first, then fall back to first available number
-  const match = numbers.find(n => n.assistantId === assistantId) ?? numbers[0]
+  const raw  = await res.json() as VapiPhoneNumber[] | { results?: VapiPhoneNumber[] }
+  const list = Array.isArray(raw) ? raw : (raw.results ?? [])
+  const match = list.find(n => n.assistantId === assistantId) ?? list[0]
   if (!match) return null
 
   cachedPhoneNumberId = match.id
   return match.id
 }
 
-const FIRST_MESSAGE = (name?: string, interest?: string) => {
+// ── Call strategies ───────────────────────────────────────────────────────────
+
+/** US/CA: Vapi outbound — delivers custom firstMessage with caller context */
+async function placeVapiCall(
+  apiKey:        string,
+  assistantId:   string,
+  phoneNumberId: string,
+  phone:         string,
+  name?:         string,
+  interest?:     string,
+): Promise<string> {
   const greeting = name ? `Hi ${name}!` : `Hi there!`
-  const context  = interest
-    ? ` I can see you're interested in ${interest}.`
-    : ''
-  return `${greeting} This is Sage, the AI receptionist from Blueslate. You requested a live demo from our website.${context} Before we get into it — could I confirm your name and the best phone number to reach you? I want to make sure we capture your details so our team can follow up with you personally.`
+  const ctx      = interest ? ` I can see you're interested in ${interest}.` : ''
+  const firstMessage = `${greeting} This is Sage, the AI receptionist from Blueslate. You requested a live demo from our website.${ctx} Before we dive in — could I confirm your name and the best number to reach you? I want to make sure our team can follow up with you personally.`
+
+  const res = await fetch(`${VAPI_API}/call`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      assistantId,
+      phoneNumberId,
+      customer: { number: phone, name: name ?? 'Demo Visitor' },
+      assistantOverrides: { firstMessage },
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    let msg = ''
+    try { msg = (JSON.parse(body) as { message?: string }).message ?? '' } catch { /* noop */ }
+    throw new Error(msg || `Vapi call failed (${res.status})`)
+  }
+
+  return ((await res.json() as { id: string }).id)
 }
+
+/**
+ * International: Twilio bridges the call.
+ * Twilio dials the user's number; when they pick up, TwiML connects them to
+ * the Vapi demo line (+17076699278) so Sage handles the conversation.
+ */
+async function placeTwilioBridgeCall(phone: string): Promise<string> {
+  const sid   = process.env.TWILIO_ACCOUNT_SID
+  const token = process.env.TWILIO_AUTH_TOKEN
+  const from  = process.env.TWILIO_PHONE_NUMBER
+
+  if (!sid || !token || !from) throw new Error('Twilio credentials not configured')
+
+  // TwiML: when user picks up, connect them straight into Vapi's demo line
+  const twiml = `<Response><Dial>${VAPI_NUMBER}</Dial></Response>`
+
+  const res = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${sid}/Calls.json`,
+    {
+      method:  'POST',
+      headers: {
+        Authorization:  `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ To: phone, From: from, Twiml: twiml }).toString(),
+      signal: AbortSignal.timeout(15_000),
+    },
+  )
+
+  if (!res.ok) {
+    const body = await res.json() as { message?: string; code?: number }
+    // Code 21215 = geographic permission not enabled
+    if (body.code === 21215) {
+      throw new Error('International calling not enabled on this account — enable India in Twilio Geographic Permissions')
+    }
+    throw new Error(body.message ?? `Twilio call failed (${res.status})`)
+  }
+
+  return ((await res.json() as { sid: string }).sid)
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,17 +141,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { name, interest } = parsed.data
-    // Normalize to E.164 — Vapi requires this format
-    let phone = parsed.data.phone.replace(/[\s\-().]/g, '')
-    if (!phone.startsWith('+')) {
-      // 10-digit Indian mobile (starts with 6-9)
-      if (/^[6-9]\d{9}$/.test(phone)) phone = `+91${phone}`
-      // 10-digit US/Canada
-      else if (/^\d{10}$/.test(phone)) phone = `+1${phone}`
-      // 11-digit starting with 1 (US with leading 1)
-      else if (/^1\d{10}$/.test(phone)) phone = `+${phone}`
-      else phone = `+${phone}` // best effort
-    }
+    const phone  = toE164(parsed.data.phone)
+    const intl   = isInternational(phone)
 
     const apiKey      = process.env.VAPI_API_KEY
     const assistantId = process.env.VAPI_ASSISTANT_ID
@@ -77,49 +150,24 @@ export async function POST(req: NextRequest) {
     if (!apiKey)      return NextResponse.json({ error: 'Voice service not configured' }, { status: 503 })
     if (!assistantId) return NextResponse.json({ error: 'Demo assistant not configured' }, { status: 503 })
 
-    const phoneNumberId = await resolvePhoneNumberId(apiKey, assistantId)
-    if (!phoneNumberId) {
-      return NextResponse.json(
-        { error: 'No phone number found — please call us directly at +1 (707) 669-9278' },
-        { status: 503 },
-      )
+    let callId: string
+
+    if (intl) {
+      // International → Twilio bridge → Vapi demo line
+      callId = await placeTwilioBridgeCall(phone)
+    } else {
+      // US/CA → Vapi direct outbound with personalized firstMessage
+      const phoneNumberId = await resolveVapiPhoneNumberId(apiKey, assistantId)
+      if (!phoneNumberId) {
+        return NextResponse.json(
+          { error: 'No Vapi phone number found — try calling directly at +1 (707) 669-9278' },
+          { status: 503 },
+        )
+      }
+      callId = await placeVapiCall(apiKey, assistantId, phoneNumberId, phone, name, interest)
     }
 
-    type VapiCallResponse = { id: string; [key: string]: unknown }
-
-    const res = await fetch(`${VAPI_API}/call`, {
-      method: 'POST',
-      headers: {
-        Authorization:  `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        assistantId,
-        phoneNumberId,
-        customer: {
-          number: phone,
-          name:   name ?? 'Demo Visitor',
-        },
-        assistantOverrides: {
-          firstMessage: FIRST_MESSAGE(name, interest),
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '')
-      console.error('[demo-call] Vapi error:', res.status, errBody)
-      let vapiMsg = ''
-      try { vapiMsg = (JSON.parse(errBody) as { message?: string; error?: string }).message ?? (JSON.parse(errBody) as { message?: string; error?: string }).error ?? '' } catch { /* ignore */ }
-      return NextResponse.json(
-        { error: vapiMsg || `Call failed (${res.status}) — try calling directly at +1 (707) 669-9278` },
-        { status: 502 },
-      )
-    }
-
-    const data = await res.json() as VapiCallResponse
-    return NextResponse.json({ success: true, callId: data.id })
+    return NextResponse.json({ success: true, callId, method: intl ? 'twilio-bridge' : 'vapi' })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[demo-call] Error:', err)
