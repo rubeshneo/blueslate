@@ -58,7 +58,19 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { phone, name, interest } = parsed.data
+    const { name, interest } = parsed.data
+    // Normalize to E.164 — Vapi requires this format
+    let phone = parsed.data.phone.replace(/[\s\-().]/g, '')
+    if (!phone.startsWith('+')) {
+      // 10-digit Indian mobile (starts with 6-9)
+      if (/^[6-9]\d{9}$/.test(phone)) phone = `+91${phone}`
+      // 10-digit US/Canada
+      else if (/^\d{10}$/.test(phone)) phone = `+1${phone}`
+      // 11-digit starting with 1 (US with leading 1)
+      else if (/^1\d{10}$/.test(phone)) phone = `+${phone}`
+      else phone = `+${phone}` // best effort
+    }
+
     const apiKey      = process.env.VAPI_API_KEY
     const assistantId = process.env.VAPI_ASSISTANT_ID
 
@@ -96,10 +108,12 @@ export async function POST(req: NextRequest) {
     })
 
     if (!res.ok) {
-      const err = await res.text().catch(() => '')
-      console.error('[demo-call] Vapi error:', res.status, err)
+      const errBody = await res.text().catch(() => '')
+      console.error('[demo-call] Vapi error:', res.status, errBody)
+      let vapiMsg = ''
+      try { vapiMsg = (JSON.parse(errBody) as { message?: string; error?: string }).message ?? (JSON.parse(errBody) as { message?: string; error?: string }).error ?? '' } catch { /* ignore */ }
       return NextResponse.json(
-        { error: 'Could not place call — please try calling directly at +1 (707) 669-9278' },
+        { error: vapiMsg || `Call failed (${res.status}) — try calling directly at +1 (707) 669-9278` },
         { status: 502 },
       )
     }
