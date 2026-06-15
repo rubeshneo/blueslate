@@ -37,6 +37,21 @@ type VapiPhoneNumber = {
 
 let cachedUsPhoneId:   string | null = null
 let cachedIntlPhoneId: string | null = null
+let cachedDemoModel:   { provider: string; model: string } | null = null
+
+/** Fetch demo assistant's model provider+name once, then cache — needed for valid model override */
+async function getDemoModel(apiKey: string, assistantId: string): Promise<{ provider: string; model: string } | null> {
+  if (cachedDemoModel) return cachedDemoModel
+  const res = await fetch(`${VAPI_API}/assistant/${assistantId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) return null
+  const data = await res.json() as { model?: { provider?: string; model?: string } }
+  if (!data.model?.provider) return null
+  cachedDemoModel = { provider: data.model.provider, model: data.model.model ?? 'gpt-4o' }
+  return cachedDemoModel
+}
 
 async function listVapiNumbers(apiKey: string): Promise<VapiPhoneNumber[]> {
   const res = await fetch(`${VAPI_API}/phone-number?limit=100`, {
@@ -175,6 +190,17 @@ async function placeVapiCall(
     ? `${greeting} This is Sage from Blueslate AI. You asked about "${interest}" — ${getInterestOpener(interest)} What else can I answer for you?`
     : `${greeting} This is Sage from Blueslate AI, calling back from our website demo. I'm here to answer any questions about our AI receptionist platform for franchise businesses. What would you like to know?`
 
+  // Vapi requires provider+model when overriding the model object — fetch once, then use cached
+  const demoModel = await getDemoModel(apiKey, assistantId)
+
+  const modelOverride = demoModel
+    ? {
+        provider: demoModel.provider,
+        model:    demoModel.model,
+        messages: [{ role: 'system', content: buildDemoSystemPrompt(name, interest) }],
+      }
+    : undefined
+
   const res = await fetch(`${VAPI_API}/call`, {
     method:  'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -184,11 +210,7 @@ async function placeVapiCall(
       customer: { number: phone, name: name ?? 'Demo Visitor' },
       assistantOverrides: {
         firstMessage,
-        // Override the base system prompt so Sage knows lead is captured
-        // and doesn't ask for contact info or promise a human follow-up
-        model: {
-          messages: [{ role: 'system', content: buildDemoSystemPrompt(name, interest) }],
-        },
+        ...(modelOverride ? { model: modelOverride } : {}),
       },
     }),
     signal: AbortSignal.timeout(15_000),
