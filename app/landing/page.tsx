@@ -444,13 +444,22 @@ function SageDemo() {
   const [obName,     setObName]     = useState('')
   const [obPhone,    setObPhone]    = useState('')
   const [obInterest, setObInterest] = useState('')
-  const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error'>('idle')
+  const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error' | 'intl'>('idle')
   const [obError,    setObError]    = useState('')
 
-  // Step 1: collect → show preview lead card before calling
+  function isInternational(raw: string): boolean {
+    const clean = raw.replace(/[\s\-().]/g, '')
+    if (/^\+1\d{10}$/.test(clean)) return false   // +1XXXXXXXXXX  US/CA
+    if (/^1\d{10}$/.test(clean))   return false   // 1XXXXXXXXXX   US/CA
+    if (/^\d{10}$/.test(clean))    return false   // bare 10-digit — assume US
+    return clean.startsWith('+') || clean.length > 11
+  }
+
+  // Step 1: collect → detect intl or show preview lead card before calling
   function previewLead(e: React.FormEvent) {
     e.preventDefault()
     if (!obPhone.trim()) return
+    if (isInternational(obPhone)) { setObState('intl'); return }
     setObState('preview')
   }
 
@@ -681,6 +690,37 @@ function SageDemo() {
             <div className="flex flex-col items-center gap-3 py-10">
               <Loader2 size={28} className="text-[var(--accent)] animate-spin" />
               <p className="font-display text-xs text-[var(--text-3)] uppercase tracking-widest">Placing your call…</p>
+            </div>
+          )}
+
+          {/* International number — redirect to browser demo */}
+          {obState === 'intl' && (
+            <div className="flex flex-col items-center gap-5 py-6 text-center" style={{ animation: 'fade-up 0.25s ease-out both' }}>
+              <div className="w-14 h-14 rounded-full bg-[var(--accent-tint)] border border-[var(--accent)]/20 flex items-center justify-center">
+                <Globe size={24} className="text-[var(--accent)]" />
+              </div>
+              <div>
+                <p className="font-display font-bold text-[var(--text-1)] text-sm mb-1">Outbound demo is US numbers only</p>
+                <p className="text-xs text-[var(--text-3)] leading-relaxed max-w-xs mx-auto">
+                  Our demo line can&apos;t dial international numbers yet. Use the <strong className="text-[var(--text-2)]">Browser tab</strong> to talk to Sage right now — same AI, no phone needed.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 w-full">
+                <button
+                  onClick={() => setTab('browser')}
+                  className="btn-primary py-3 flex items-center justify-center gap-2 text-xs"
+                >
+                  <Mic size={13} /> Talk to Sage in Browser — Free
+                </button>
+                <a href="tel:+17076699278"
+                  className="btn-ghost py-2.5 flex items-center justify-center gap-2 text-xs rounded-lg font-display font-bold uppercase tracking-widest">
+                  <PhoneCall size={13} className="text-[var(--live)]" /> Or call +1 (707) 669-9278
+                </a>
+              </div>
+              <button onClick={resetOutbound}
+                className="text-[10px] font-display text-[var(--text-3)] hover:text-[var(--accent)] transition-colors uppercase tracking-widest font-bold underline">
+                Use a different number
+              </button>
             </div>
           )}
 
