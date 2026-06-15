@@ -445,8 +445,9 @@ function SageDemo() {
   const [obPhone,    setObPhone]    = useState('')
   const [obInterest,      setObInterest]      = useState('')
   const [obOtherInterest, setObOtherInterest] = useState('')
-  const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error'>('idle')
+  const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'ended' | 'error'>('idle')
   const [obError,    setObError]    = useState('')
+  const [obCallId,   setObCallId]   = useState('')
   const [callTimer,  setCallTimer]  = useState(90)
 
   // Countdown when call is placed — auto-reset after 90s
@@ -461,6 +462,20 @@ function SageDemo() {
     }, 1000)
     return () => clearInterval(interval)
   }, [obState])
+
+  // Poll Vapi call status every 3s — transition to 'ended' when call finishes
+  useEffect(() => {
+    if (obState !== 'done' || !obCallId) return
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/demo-call/status?callId=${obCallId}`)
+        if (!r.ok) return
+        const d = await r.json() as { status?: string }
+        if (d.status === 'ended' || d.status === 'failed') setObState('ended')
+      } catch { /* ignore polling errors */ }
+    }, 3000)
+    return () => clearInterval(id)
+  }, [obState, obCallId])
 
   // Step 1: collect → show preview lead card before calling
   function previewLead(e: React.FormEvent) {
@@ -482,8 +497,9 @@ function SageDemo() {
           interest: effectiveInterest || undefined,
         }),
       })
-      const json = await res.json() as { error?: string }
+      const json = await res.json() as { error?: string; callId?: string }
       if (!res.ok) throw new Error(json.error ?? 'Call failed')
+      setObCallId(json.callId ?? '')
       setObState('done')
     } catch (err) {
       setObError(err instanceof Error ? err.message : 'Something went wrong')
@@ -498,6 +514,7 @@ function SageDemo() {
     setObInterest('')
     setObOtherInterest('')
     setObError('')
+    setObCallId('')
   }
 
   // Effective interest: custom text > chip selection
@@ -671,6 +688,48 @@ function SageDemo() {
                   {callTimer > 0 ? 'Cancel & try again' : 'Try a different number'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Ended state — call finished, Sage is done */}
+          {obState === 'ended' && (
+            <div className="flex flex-col items-center gap-5 py-6" style={{ animation: 'fade-up 0.3s ease-out both' }}>
+              <div className="w-14 h-14 rounded-full bg-[var(--live)]/10 border border-[var(--live)]/30 flex items-center justify-center">
+                <Check size={24} className="text-[var(--live)]" />
+              </div>
+              <div className="text-center">
+                <p className="font-display font-bold text-sm text-[var(--text-1)] mb-1">Call with Sage ended</p>
+                <p className="text-xs text-[var(--text-3)]">Hope that answered your questions about Blueslate AI!</p>
+              </div>
+
+              {/* Lead confirmation */}
+              <div className="w-full border border-[var(--live)]/30 rounded-xl overflow-hidden bg-[var(--live)]/5">
+                <div className="px-4 py-2 bg-[var(--live)]/10 border-b border-[var(--live)]/20 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--live)] animate-pulse" />
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--live)]">Lead logged to dashboard</p>
+                </div>
+                <div className="p-4 space-y-2">
+                  {[
+                    { label: 'Name',     val: obName.trim()     || '(captured on call)' },
+                    { label: 'Phone',    val: obPhone.trim() },
+                    { label: 'Interest', val: effectiveInterest || '(identified on call)' },
+                    { label: 'Source',   val: 'Landing page demo' },
+                  ].map(({ label, val }) => (
+                    <div key={label} className="flex items-start gap-3">
+                      <span className="font-display font-bold text-[9px] uppercase tracking-wider text-[var(--live)]/70 w-16 shrink-0">{label}</span>
+                      <span className="text-[11px] text-[var(--text-1)] font-display">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <a href="/register" className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-xs">
+                <ArrowRight size={13} /> Get This For My Franchise
+              </a>
+              <button onClick={resetOutbound}
+                className="text-[10px] font-display font-bold uppercase tracking-widest text-[var(--text-3)] hover:text-[var(--accent)] transition-colors underline">
+                Try another call
+              </button>
             </div>
           )}
 

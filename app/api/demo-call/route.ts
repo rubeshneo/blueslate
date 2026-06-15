@@ -128,6 +128,36 @@ function getInterestOpener(interest: string): string {
   return "That's a great question — let me answer that for you."
 }
 
+// ── Demo system prompt — overrides the base assistant for outbound context ────
+
+function buildDemoSystemPrompt(name?: string, interest?: string): string {
+  return `You are Sage, Blueslate AI's live demo agent — speaking with ${name ?? 'a prospect'} on the phone.
+
+CONTEXT: They requested a live outbound demo from our website.${interest ? ` They specifically want to know about: "${interest}".` : ''}
+
+CRITICAL RULES:
+- DO NOT ask for their name or phone number — you already have it, the lead is captured
+- DO NOT say "I'll have someone follow up" or "our team will reach out" — YOU are the follow-up
+- You ARE the AI receptionist — demonstrate the product by being it
+- Keep every response to 2–3 short sentences (this is a phone call)
+- Never use bullet points, lists, or markdown on a phone call
+
+YOUR JOB: Answer their questions about Blueslate AI confidently and helpfully.
+
+BLUESLATE FACTS:
+- Free pilot, no credit card required. After pilot: $99/location/month (1,000 voice minutes + full lead capture)
+- Setup takes under 30 minutes — paste a website URL, AI scrapes pricing/FAQs in ~60 seconds, then route your business phone
+- Built for franchise businesses — every location gets its own AI agent, phone number, and dashboard
+- AI answers every call 24/7 including after hours and weekends, captures caller name/number/interest automatically
+- Powered by Vapi + Groq — natural-sounding voice AI that handles interruptions and follow-up questions
+
+CONVERSATION FLOW:
+1. Address their specific interest directly (it's already in your opening message)
+2. Answer any follow-up questions
+3. When they're satisfied: "You can start free at blueslate.ai — most franchise owners are live in under 30 minutes"
+4. Close warmly`
+}
+
 // ── Vapi outbound call — full AI experience ───────────────────────────────────
 
 async function placeVapiCall(
@@ -140,10 +170,10 @@ async function placeVapiCall(
 ): Promise<string> {
   const greeting = name ? `Hi ${name}!` : `Hi there!`
 
-  // Lead with the interest directly so Sage immediately addresses their question
+  // Lead directly with the interest answer — no contact-info ask (we already have it)
   const firstMessage = interest
-    ? `${greeting} This is Sage from Blueslate AI. You reached out wanting to know about "${interest}" — let me walk you right through that. ${getInterestOpener(interest)} Also, could I grab your name and best contact number so our team can follow up with you personally?`
-    : `${greeting} This is Sage from Blueslate AI. You just requested a live demo from our website. I'd love to show you how our AI receptionist works for franchise businesses. Could I start by confirming your name and the best number to reach you?`
+    ? `${greeting} This is Sage from Blueslate AI. You asked about "${interest}" — ${getInterestOpener(interest)} What else can I answer for you?`
+    : `${greeting} This is Sage from Blueslate AI, calling back from our website demo. I'm here to answer any questions about our AI receptionist platform for franchise businesses. What would you like to know?`
 
   const res = await fetch(`${VAPI_API}/call`, {
     method:  'POST',
@@ -152,7 +182,14 @@ async function placeVapiCall(
       assistantId,
       phoneNumberId,
       customer: { number: phone, name: name ?? 'Demo Visitor' },
-      assistantOverrides: { firstMessage },
+      assistantOverrides: {
+        firstMessage,
+        // Override the base system prompt so Sage knows lead is captured
+        // and doesn't ask for contact info or promise a human follow-up
+        model: {
+          messages: [{ role: 'system', content: buildDemoSystemPrompt(name, interest) }],
+        },
+      },
     }),
     signal: AbortSignal.timeout(15_000),
   })
