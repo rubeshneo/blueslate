@@ -9,6 +9,36 @@ const Schema = z.object({
 
 const VAPI_API = 'https://api.vapi.ai'
 
+// Cache the resolved phone number ID for the process lifetime (avoids repeated API calls)
+let cachedPhoneNumberId: string | null = null
+
+type VapiPhoneNumber = { id: string; assistantId?: string; number?: string; [key: string]: unknown }
+
+async function resolvePhoneNumberId(apiKey: string, assistantId: string): Promise<string | null> {
+  // 1. Prefer explicit env var
+  if (process.env.VAPI_DEMO_PHONE_ID) return process.env.VAPI_DEMO_PHONE_ID
+
+  // 2. Return cached value from a previous resolution
+  if (cachedPhoneNumberId) return cachedPhoneNumberId
+
+  // 3. Auto-resolve: find the phone number linked to the demo assistant
+  const res = await fetch(`${VAPI_API}/phone-number?limit=100`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) return null
+
+  const list = await res.json() as VapiPhoneNumber[]
+  const numbers = Array.isArray(list) ? list : (list as { results?: VapiPhoneNumber[] }).results ?? []
+
+  // Match by assistantId first, then fall back to first available number
+  const match = numbers.find(n => n.assistantId === assistantId) ?? numbers[0]
+  if (!match) return null
+
+  cachedPhoneNumberId = match.id
+  return match.id
+}
+
 const FIRST_MESSAGE = (name?: string, interest?: string) => {
   const greeting = name ? `Hi ${name}!` : `Hi there!`
   const context  = interest
@@ -29,13 +59,19 @@ export async function POST(req: NextRequest) {
     }
 
     const { phone, name, interest } = parsed.data
-    const apiKey          = process.env.VAPI_API_KEY
-    const assistantId     = process.env.VAPI_ASSISTANT_ID
-    const phoneNumberId   = process.env.VAPI_DEMO_PHONE_ID
+    const apiKey      = process.env.VAPI_API_KEY
+    const assistantId = process.env.VAPI_ASSISTANT_ID
 
-    if (!apiKey)        return NextResponse.json({ error: 'Voice service not configured' }, { status: 503 })
-    if (!assistantId)   return NextResponse.json({ error: 'Demo assistant not configured' }, { status: 503 })
-    if (!phoneNumberId) return NextResponse.json({ error: 'Demo phone number not configured' }, { status: 503 })
+    if (!apiKey)      return NextResponse.json({ error: 'Voice service not configured' }, { status: 503 })
+    if (!assistantId) return NextResponse.json({ error: 'Demo assistant not configured' }, { status: 503 })
+
+    const phoneNumberId = await resolvePhoneNumberId(apiKey, assistantId)
+    if (!phoneNumberId) {
+      return NextResponse.json(
+        { error: 'No phone number found — please call us directly at +1 (707) 669-9278' },
+        { status: 503 },
+      )
+    }
 
     type VapiCallResponse = { id: string; [key: string]: unknown }
 
