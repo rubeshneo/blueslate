@@ -450,30 +450,35 @@ function SageDemo() {
   const [obCallId,   setObCallId]   = useState('')
   const [callTimer,  setCallTimer]  = useState(90)
 
-  // Countdown when call is placed — auto-reset after 90s
+  // Countdown when call is placed — auto-transitions to 'ended' at 0
   useEffect(() => {
     if (obState !== 'done') return
     setCallTimer(90)
     const interval = setInterval(() => {
       setCallTimer(prev => {
-        if (prev <= 1) { clearInterval(interval); return 0 }
+        if (prev <= 1) {
+          clearInterval(interval)
+          setObState('ended')  // stop polling + show ended screen after 90s regardless
+          return 0
+        }
         return prev - 1
       })
     }, 1000)
     return () => clearInterval(interval)
   }, [obState])
 
-  // Poll Vapi call status every 3s — transition to 'ended' when call finishes
+  // Poll Vapi call status every 5s — stop as soon as Vapi reports ended
   useEffect(() => {
     if (obState !== 'done' || !obCallId) return
     const id = setInterval(async () => {
       try {
         const r = await fetch(`/api/demo-call/status?callId=${obCallId}`)
         if (!r.ok) return
-        const d = await r.json() as { status?: string }
-        if (d.status === 'ended' || d.status === 'failed') setObState('ended')
+        const d = await r.json() as { status?: string; endedAt?: string }
+        // endedAt is set by Vapi as soon as the call finishes, even before status updates
+        if (d.status === 'ended' || d.status === 'failed' || d.endedAt) setObState('ended')
       } catch { /* ignore polling errors */ }
-    }, 3000)
+    }, 5000)
     return () => clearInterval(id)
   }, [obState, obCallId])
 
