@@ -115,6 +115,19 @@ async function resolveIntlPhoneId(apiKey: string, assistantId: string): Promise<
   return imported.id
 }
 
+// ── Interest-aware openers ────────────────────────────────────────────────────
+
+function getInterestOpener(interest: string): string {
+  const i = interest.toLowerCase()
+  if (i.includes('pric'))      return "We're completely free during our pilot — no credit card needed. After that, plans start at $99 per location per month, which covers 1,000 AI voice minutes and full lead capture."
+  if (i.includes('multi'))     return "Blueslate is built for multi-location from day one — every location gets its own AI agent, phone number, and dashboard, all under a single account."
+  if (i.includes('lead'))      return "Every call is transcribed automatically. The caller's name, number, and interest are extracted and logged to your dashboard in under 60 seconds — no manual entry."
+  if (i.includes('fast') || i.includes('live')) return "Most franchise owners are live in under 30 minutes. You paste your website URL, the AI scrapes your pricing and FAQs in about 60 seconds, then you route your business phone — that's it."
+  if (i.includes('recept'))    return "Blueslate replaces the need for a human to answer the phone. The AI handles every call 24/7 — after hours, weekends, peak times — and captures every lead automatically."
+  // Fallback for custom questions
+  return "That's a great question — let me answer that for you."
+}
+
 // ── Vapi outbound call — full AI experience ───────────────────────────────────
 
 async function placeVapiCall(
@@ -125,9 +138,12 @@ async function placeVapiCall(
   name?:         string,
   interest?:     string,
 ): Promise<string> {
-  const greeting     = name ? `Hi ${name}!` : `Hi there!`
-  const ctx          = interest ? ` I can see you're interested in "${interest}".` : ''
-  const firstMessage = `${greeting} This is Sage from Blueslate AI. You just requested a live demo from our website.${ctx} I'd love to walk you through how our AI receptionist works. Could I start by confirming your name and the best number to reach you — so our team can follow up personally?`
+  const greeting = name ? `Hi ${name}!` : `Hi there!`
+
+  // Lead with the interest directly so Sage immediately addresses their question
+  const firstMessage = interest
+    ? `${greeting} This is Sage from Blueslate AI. You reached out wanting to know about "${interest}" — let me walk you right through that. ${getInterestOpener(interest)} Also, could I grab your name and best contact number so our team can follow up with you personally?`
+    : `${greeting} This is Sage from Blueslate AI. You just requested a live demo from our website. I'd love to show you how our AI receptionist works for franchise businesses. Could I start by confirming your name and the best number to reach you?`
 
   const res = await fetch(`${VAPI_API}/call`, {
     method:  'POST',

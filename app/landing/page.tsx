@@ -443,7 +443,8 @@ function SageDemo() {
   // Outbound call state
   const [obName,     setObName]     = useState('')
   const [obPhone,    setObPhone]    = useState('')
-  const [obInterest, setObInterest] = useState('')
+  const [obInterest,      setObInterest]      = useState('')
+  const [obOtherInterest, setObOtherInterest] = useState('')
   const [obState,    setObState]    = useState<'idle' | 'preview' | 'loading' | 'done' | 'error'>('idle')
   const [obError,    setObError]    = useState('')
   const [callTimer,  setCallTimer]  = useState(90)
@@ -478,7 +479,7 @@ function SageDemo() {
         body:    JSON.stringify({
           phone:    obPhone.trim(),
           name:     obName.trim() || undefined,
-          interest: obInterest.trim() || undefined,
+          interest: effectiveInterest || undefined,
         }),
       })
       const json = await res.json() as { error?: string }
@@ -495,8 +496,12 @@ function SageDemo() {
     setObPhone('')
     setObName('')
     setObInterest('')
+    setObOtherInterest('')
     setObError('')
   }
+
+  // Effective interest: custom text > chip selection
+  const effectiveInterest = obOtherInterest.trim() || obInterest
 
   const tabs: { id: DemoTab; label: string; sublabel: string }[] = [
     { id: 'browser',  label: 'Browser',      sublabel: 'Mic + text' },
@@ -642,7 +647,7 @@ function SageDemo() {
                   {[
                     { label: 'Name',     val: obName.trim()     || '(Sage will ask)' },
                     { label: 'Phone',    val: obPhone.trim() },
-                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify)' },
+                    { label: 'Interest', val: effectiveInterest || '(Sage will identify)' },
                     { label: 'Source',   val: 'Landing page demo' },
                   ].map(({ label, val }) => (
                     <div key={label} className="flex items-start gap-3">
@@ -685,7 +690,7 @@ function SageDemo() {
                   {[
                     { label: 'Name',     val: obName.trim()     || '(Sage will ask on call)' },
                     { label: 'Phone',    val: obPhone.trim() },
-                    { label: 'Interest', val: obInterest.trim() || '(Sage will identify on call)' },
+                    { label: 'Interest', val: effectiveInterest || '(Sage will identify on call)' },
                     { label: 'Source',   val: 'Landing page demo' },
                   ].map(({ label, val }) => (
                     <div key={label} className="flex items-start gap-3">
@@ -747,17 +752,17 @@ function SageDemo() {
                   className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-3)]"
                 />
 
-                {/* Interest chips */}
-                <div>
-                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--text-3)] mb-2">What are you interested in? (optional)</p>
+                {/* Interest chips + custom input */}
+                <div className="flex flex-col gap-2">
+                  <p className="font-display font-bold text-[9px] uppercase tracking-widest text-[var(--text-3)]">What should Sage talk to you about? (optional)</p>
                   <div className="flex flex-wrap gap-1.5">
                     {INTEREST_OPTIONS.map(opt => (
                       <button
                         type="button"
                         key={opt}
-                        onClick={() => setObInterest(obInterest === opt ? '' : opt)}
+                        onClick={() => { setObInterest(obInterest === opt ? '' : opt); setObOtherInterest('') }}
                         className={`px-2.5 py-1 text-[10px] font-display font-medium rounded-full border transition-all ${
-                          obInterest === opt
+                          obInterest === opt && !obOtherInterest
                             ? 'bg-[var(--accent)] border-[var(--accent)] text-white'
                             : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
                         }`}
@@ -766,6 +771,12 @@ function SageDemo() {
                       </button>
                     ))}
                   </div>
+                  <input
+                    value={obOtherInterest}
+                    onChange={e => { setObOtherInterest(e.target.value); if (e.target.value) setObInterest('') }}
+                    placeholder="Or type your own question — Sage will answer it on the call"
+                    className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-xs text-[var(--text-1)] outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-3)]"
+                  />
                 </div>
 
                 {obError && (
