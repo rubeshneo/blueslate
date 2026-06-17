@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { parseTranscript } from '@/lib/claude'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendNurtureSms } from '@/lib/sms'
+import { createNotification } from '@/lib/redis'
 
 // ── HMAC signature verification ───────────────────────────────────────────────
 // Vapi signs each webhook request with HMAC-SHA256 using VAPI_WEBHOOK_SECRET.
@@ -174,6 +175,15 @@ export async function POST(req: NextRequest) {
         console.error('[WEBHOOK_LEAD_ERROR]:', leadError)
       } else {
         console.log(`[Vapi] Lead committed: ${lead.id}`)
+
+        // ── MODULE 0: Notification — fire-and-forget to Redis bell ───
+        void createNotification(tenantId, {
+          title:   `New lead: ${parsed.caller_name ?? 'Unknown caller'}`,
+          message: parsed.core_interest
+            ? `Interested in ${parsed.core_interest} — ${parsed.call_outcome}`
+            : `Call outcome: ${parsed.call_outcome}`,
+          type: parsed.call_outcome === 'booked' ? 'success' : 'info',
+        }).catch((e: Error) => console.warn('[Vapi] notification skipped:', e.message))
 
         // ── MODULE 1: SMS Nurture — true non-blocking macro task ────
         // Intentionally NOT awaited. Tenant lookup + SMS dispatch run
