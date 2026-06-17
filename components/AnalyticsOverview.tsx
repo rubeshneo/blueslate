@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { TrendingUp, Users, Phone, Target, ArrowRight } from 'lucide-react'
 
 interface Lead {
@@ -27,10 +27,15 @@ const PLOT_W  = CHART_W - PAD.left - PAD.right
 const PLOT_H  = CHART_H - PAD.top  - PAD.bottom
 
 // ── Call Velocity Chart ─────────────────────────────────────────────────────
-function CallVelocityChart({ callLogs }: { callLogs: CallLog[] }) {
-  const points = useMemo(() => {
-    const now  = Date.now()
-    const days = 14
+function CallVelocityChart({ callLogs, days: daysProp }: { callLogs: CallLog[]; days: number }) {
+  const { points, days } = useMemo(() => {
+    const now = Date.now()
+    let days = daysProp
+    if (days === 0) {
+      // all-time: span from oldest call to today
+      const ts = callLogs.filter(c => c.started_at).map(c => new Date(c.started_at).getTime())
+      days = ts.length === 0 ? 30 : Math.max(14, Math.ceil((now - Math.min(...ts)) / 86_400_000) + 1)
+    }
     const slots: Record<string, number> = {}
     for (let d = days - 1; d >= 0; d--) {
       const dt = new Date(now - d * 86_400_000)
@@ -41,8 +46,8 @@ function CallVelocityChart({ callLogs }: { callLogs: CallLog[] }) {
       const key = c.started_at.slice(0, 10)
       if (key in slots) slots[key] = (slots[key] ?? 0) + 1
     })
-    return Object.entries(slots).map(([date, count]) => ({ date, count }))
-  }, [callLogs])
+    return { points: Object.entries(slots).map(([date, count]) => ({ date, count })), days }
+  }, [callLogs, daysProp])
 
   const maxVal = Math.max(...points.map((p) => p.count), 1)
   const total  = points.reduce((s, p) => s + p.count, 0)
@@ -69,7 +74,7 @@ function CallVelocityChart({ callLogs }: { callLogs: CallLog[] }) {
             {total}
           </p>
           <p className="font-display uppercase mt-1 text-[9px] tracking-[0.14em] text-[var(--text-3)]">
-            calls · last 14 days
+            calls · {daysProp === 0 ? 'all time' : `last ${days} days`}
           </p>
         </div>
         <Phone size={16} className="text-[var(--text-3)] mt-1 group-hover:text-[var(--accent)] transition-colors drop-shadow-[0_0_5px_var(--accent)]" />
@@ -465,7 +470,28 @@ function KpiRow({ leads, callLogs }: Props) {
   )
 }
 
+const RANGES = [
+  { key: '7d',  label: '7d',  ms: 7  * 86_400_000 },
+  { key: '30d', label: '30d', ms: 30 * 86_400_000 },
+  { key: 'all', label: 'All', ms: 0 },
+] as const
+type RangeKey = typeof RANGES[number]['key']
+
 export default function AnalyticsOverview({ leads, callLogs }: Props) {
+  const [range, setRange] = useState<RangeKey>('30d')
+
+  const rangeMs    = RANGES.find(r => r.key === range)!.ms
+  const chartDays  = range === '7d' ? 7 : range === '30d' ? 30 : 0
+
+  const filteredLeads = useMemo(() =>
+    rangeMs ? leads.filter(l => Date.now() - new Date(l.parsed_at).getTime() <= rangeMs) : leads,
+    [leads, rangeMs]
+  )
+  const filteredCallLogs = useMemo(() =>
+    rangeMs ? callLogs.filter(c => c.started_at && Date.now() - new Date(c.started_at).getTime() <= rangeMs) : callLogs,
+    [callLogs, rangeMs]
+  )
+
   const hasData = leads.length > 0 || callLogs.length > 0
 
   if (!hasData) {
@@ -508,12 +534,25 @@ export default function AnalyticsOverview({ leads, callLogs }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <KpiRow leads={leads} callLogs={callLogs} />
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <CallVelocityChart callLogs={callLogs} />
-        <OutcomeChart      leads={leads} />
+      {/* Range picker */}
+      <div className="flex items-center justify-end gap-1">
+        {RANGES.map(r => (
+          <button key={r.key} onClick={() => setRange(r.key)}
+            className={`font-display font-bold uppercase text-[10px] tracking-widest px-3 py-1.5 border transition-all ${
+              range === r.key
+                ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-tint)]'
+                : 'border-[var(--border)] text-[var(--text-3)] hover:border-[var(--border-strong)] hover:text-[var(--text-2)]'
+            }`}>
+            {r.label}
+          </button>
+        ))}
       </div>
-      <InterestChart leads={leads} />
+      <KpiRow leads={filteredLeads} callLogs={filteredCallLogs} />
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <CallVelocityChart callLogs={filteredCallLogs} days={chartDays} />
+        <OutcomeChart      leads={filteredLeads} />
+      </div>
+      <InterestChart leads={filteredLeads} />
     </div>
   )
 }

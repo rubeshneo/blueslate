@@ -366,10 +366,54 @@ export default function LeadsDashboard({
     initialLeads.length > 0 ? initialLeads[initialLeads.length - 1]?.parsed_at ?? null : null,
   )
   const [loadingMore, setLoadingMore] = useState(false)
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [selectedLead, setSelectedLead]   = useState<Lead | null>(null)
+  const [selectedIds,  setSelectedIds]    = useState<Set<string>>(new Set())
+  const [callAllState, setCallAllState]   = useState<'idle' | 'running' | 'done'>('idle')
+  const [callAllProg,  setCallAllProg]    = useState({ done: 0, total: 0, errors: 0 })
   const loadingMoreRef = useRef(false)
 
   const allLeads = [...leads, ...extraLeads]
+
+  const leadsWithPhone = allLeads.filter(l => l.caller_phone)
+  const isAllSelected  = leadsWithPhone.length > 0 && leadsWithPhone.every(l => selectedIds.has(l.id))
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback(() => {
+    if (isAllSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(leadsWithPhone.map(l => l.id)))
+    }
+  }, [isAllSelected, leadsWithPhone])
+
+  const callAll = useCallback(async () => {
+    const targets = allLeads.filter(l => selectedIds.has(l.id) && l.caller_phone)
+    if (!targets.length) return
+    setCallAllState('running')
+    setCallAllProg({ done: 0, total: targets.length, errors: 0 })
+    let errors = 0
+    for (const lead of targets) {
+      try {
+        const res = await fetch('/api/vapi/outbound', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ toNumber: lead.caller_phone, toName: lead.caller_name ?? undefined, interest: lead.core_interest ?? undefined }),
+        })
+        if (!res.ok) errors++
+      } catch { errors++ }
+      setCallAllProg(prev => ({ ...prev, done: prev.done + 1, errors }))
+      await new Promise(r => setTimeout(r, 800))
+    }
+    setCallAllState('done')
+    setSelectedIds(new Set())
+  }, [allLeads, selectedIds])
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMoreRef.current) return
@@ -450,6 +494,37 @@ export default function LeadsDashboard({
           </div>
         </div>
 
+        {/* ── Bulk action toolbar ─────────────────────────────────────────── */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-5 py-2.5 bg-[var(--accent-tint)] border-b border-[var(--accent)]/30" style={{ animation: 'fade-up 0.2s ease both' }}>
+            <span className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--accent)]">
+              {selectedIds.size} selected
+            </span>
+            <div className="flex-1" />
+            {callAllState === 'running' ? (
+              <span className="font-display text-[10px] text-[var(--text-2)] flex items-center gap-2">
+                <Loader2 size={12} className="animate-spin" />
+                Calling {callAllProg.done}/{callAllProg.total}…
+              </span>
+            ) : callAllState === 'done' ? (
+              <span className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--live)] flex items-center gap-1.5">
+                <CheckCircle size={12} />
+                Done{callAllProg.errors > 0 ? ` · ${callAllProg.errors} failed` : ' · all placed'}
+              </span>
+            ) : (
+              <button onClick={callAll}
+                className="btn-primary py-1.5 px-4 text-[10px]">
+                <PhoneCall size={12} /> Call All ({selectedIds.size})
+              </button>
+            )}
+            <button
+              onClick={() => { setSelectedIds(new Set()); setCallAllState('idle') }}
+              className="btn-ghost py-1 px-2 text-[9px]">
+              <X size={11} /> Clear
+            </button>
+          </div>
+        )}
+
         {allLeads.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-5 relative overflow-hidden">
             <div className="absolute inset-0 bg-dot-pattern opacity-50 pointer-events-none" />
@@ -473,6 +548,15 @@ export default function LeadsDashboard({
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]">
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleAll}
+                        className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer"
+                        title={isAllSelected ? 'Deselect all' : 'Select all with phone'}
+                      />
+                    </th>
                     {['Name', 'Phone', 'Interest', 'Outcome', 'Date', 'Actions'].map((h) => (
                       <th key={h} className="text-left font-display font-bold uppercase px-5 py-3 text-[10px] tracking-[0.18em] text-[var(--text-3)]">
                         {h}
@@ -489,9 +573,19 @@ export default function LeadsDashboard({
                         key={lead.id}
                         onClick={() => setSelectedLead(lead)}
                         className={`border-b border-[var(--border)] cursor-pointer transition-all duration-200 hover:bg-[var(--accent-tint)] group ${
+                          selectedIds.has(lead.id) ? 'bg-[var(--accent-tint)]/60' :
                           isNew ? 'border-l-4 border-l-[var(--accent)] bg-[var(--accent-tint)] animate-[fade-up_0.3s_ease_both]' : 'border-l-4 border-l-transparent'
                         }`}
                       >
+                        <td className="px-4 py-3.5 w-10" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(lead.id)}
+                            onChange={() => toggleSelect(lead.id)}
+                            disabled={!lead.caller_phone}
+                            className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer disabled:opacity-30"
+                          />
+                        </td>
                         <td className="px-5 py-3.5 font-display font-semibold text-[13px] text-[var(--text-1)] group-hover:text-[var(--accent)] transition-colors">
                           {lead.caller_name || <span className="text-[var(--text-3)] italic font-body text-[12px]">Unknown</span>}
                         </td>
