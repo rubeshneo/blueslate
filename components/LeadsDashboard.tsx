@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useRealtimeLeads, type Lead } from '@/hooks/useRealtimeLeads'
 import {
   Users, Phone, Calendar, Target, Zap, ChevronDown, Download,
@@ -372,7 +372,7 @@ export default function LeadsDashboard({
   const [callAllProg,  setCallAllProg]    = useState({ done: 0, total: 0, errors: 0 })
   const loadingMoreRef = useRef(false)
 
-  const allLeads = [...leads, ...extraLeads]
+  const allLeads = useMemo(() => [...leads, ...extraLeads], [leads, extraLeads])
 
   const leadsWithPhone = allLeads.filter(l => l.caller_phone)
   const isAllSelected  = leadsWithPhone.length > 0 && leadsWithPhone.every(l => selectedIds.has(l.id))
@@ -380,7 +380,7 @@ export default function LeadsDashboard({
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
       return next
     })
   }, [])
