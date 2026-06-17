@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase'
-
 import { getTenantId } from '@/lib/get-tenant'
+import { sanitizeText } from '@/lib/sanitize'
 const PatchSchema = z.object({
   agent_name:     z.string().min(1).max(80).trim().optional(),
   agent_greeting: z.string().min(1).max(200).trim().optional(),
@@ -34,8 +34,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
   }
 
+  const TEXT_FIELDS = new Set(['agent_name', 'agent_greeting', 'name'])
   const patch = Object.fromEntries(
-    Object.entries(parsed.data).filter(([, v]) => v !== undefined)
+    Object.entries(parsed.data)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, TEXT_FIELDS.has(k) ? sanitizeText(v as string) : v])
   ) as Record<string, string>
 
   const { data, error } = await supabaseAdmin

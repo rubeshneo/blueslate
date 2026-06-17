@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Users, Phone, Brain, TrendingUp, Globe, CheckCircle,
-  XCircle, Clock, RefreshCw, Shield, AlertCircle
+  XCircle, Clock, RefreshCw, Shield, AlertCircle, Ban, RotateCcw,
 } from 'lucide-react'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -92,6 +92,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   async function load() {
     setRefreshing(true)
@@ -108,6 +109,28 @@ export default function AdminPage() {
     } finally {
       setLoading(false)
       setRefreshing(false)
+    }
+  }
+
+  async function toggleTenant(id: string, currentActive: boolean) {
+    setTogglingId(id)
+    try {
+      const res = await fetch(`/api/admin/tenants/${id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ is_active: !currentActive }),
+      })
+      if (res.ok) {
+        setTenants(prev => prev.map(t => t.id === id ? { ...t, is_active: !currentActive } : t))
+        if (summary) {
+          setSummary(prev => prev ? {
+            ...prev,
+            active_tenants: currentActive ? prev.active_tenants - 1 : prev.active_tenants + 1,
+          } : prev)
+        }
+      }
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -180,7 +203,7 @@ export default function AdminPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]">
-                  {['Franchise', 'Agent', 'Leads', 'Calls', 'Knowledge', 'Last Activity', 'Status', 'Joined'].map(h => (
+                  {['Franchise', 'Agent', 'Leads', 'Calls', 'Knowledge', 'Last Activity', 'Status', 'Joined', ''].map(h => (
                     <th key={h} className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-widest text-[var(--text-3)]">
                       {h}
                     </th>
@@ -259,6 +282,29 @@ export default function AdminPage() {
                       <span className="text-xs text-[var(--text-3)]">
                         {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => toggleTenant(t.id, t.is_active)}
+                        disabled={togglingId === t.id}
+                        title={t.is_active ? 'Suspend this franchise' : 'Reinstate this franchise'}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded border transition-all disabled:opacity-50 ${
+                          t.is_active
+                            ? 'text-red-400 border-red-400/30 hover:bg-red-400/10'
+                            : 'text-[var(--live)] border-[var(--live)]/30 hover:bg-[var(--live)]/10'
+                        }`}
+                      >
+                        {togglingId === t.id ? (
+                          <RefreshCw size={9} className="animate-spin" />
+                        ) : t.is_active ? (
+                          <Ban size={9} />
+                        ) : (
+                          <RotateCcw size={9} />
+                        )}
+                        {t.is_active ? 'Suspend' : 'Reinstate'}
+                      </button>
                     </td>
                   </tr>
                 ))}

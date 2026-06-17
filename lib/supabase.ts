@@ -14,15 +14,40 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export interface BusinessHoursDay {
+  enabled: boolean
+  open:    string   // HH:MM
+  close:   string   // HH:MM
+}
+
+export interface BusinessHoursConfig {
+  timezone:            string
+  hours: {
+    mon: BusinessHoursDay
+    tue: BusinessHoursDay
+    wed: BusinessHoursDay
+    thu: BusinessHoursDay
+    fri: BusinessHoursDay
+    sat: BusinessHoursDay
+    sun: BusinessHoursDay
+  }
+  after_hours_message: string
+}
+
 export interface Tenant {
-  id: string
-  slug: string
-  name: string
-  franchise_url: string | null
-  phone_number: string | null
-  vapi_agent_id: string | null
-  created_at: string
-  is_active: boolean
+  id:                   string
+  slug:                 string
+  name:                 string
+  franchise_url:        string | null
+  phone_number:         string | null
+  vapi_agent_id:        string | null
+  vapi_phone_number_id: string | null
+  vapi_phone_number:    string | null
+  agent_name:           string
+  agent_greeting:       string
+  business_hours:       BusinessHoursConfig | null
+  created_at:           string
+  is_active:            boolean
 }
 
 export interface KnowledgeContext {

@@ -25,7 +25,6 @@ export default async function OnboardingPage() {
 
   return (
     <OnboardingWizard
-      tenantId={tenant?.id ?? TENANT_ID}
       userName={(user?.user_metadata?.full_name as string) ?? ''}
       userEmail={user?.email ?? ''}
       initial={{

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase'
+import type { BusinessHoursConfig } from '@/lib/supabase'
 import { buildContextBlock, buildTenantSystemPrompt } from '@/lib/vapi-provisioning'
 
 const VAPI_API = 'https://api.vapi.ai'
@@ -108,18 +109,19 @@ export async function syncTenantKnowledgeToVapi(tenantId: string): Promise<{ syn
   // ── 1. Fetch tenant details ────────────────────────────────────────────────
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
-    .select('vapi_agent_id, agent_name, agent_greeting, name')
+    .select('vapi_agent_id, agent_name, agent_greeting, name, business_hours')
     .eq('id', tenantId)
     .single()
 
   if (tenantErr || !tenant) throw new Error(`Tenant not found: ${tenantId}`)
 
-  const assistantId = tenant.vapi_agent_id as string | null
+  const assistantId   = tenant.vapi_agent_id as string | null
   if (!assistantId) throw new Error('Tenant has no Vapi assistant — provision first')
 
-  const agentName = (tenant.agent_name as string | null) ?? 'Sage'
-  const greeting  = (tenant.agent_greeting as string | null)
+  const agentName     = (tenant.agent_name    as string | null) ?? 'Sage'
+  const greeting      = (tenant.agent_greeting as string | null)
     ?? `Thank you for calling ${tenant.name}! This is ${agentName}. How can I help you today?`
+  const businessHours = (tenant.business_hours as BusinessHoursConfig | null) ?? null
 
   // ── 2. Fetch tenant knowledge context ────────────────────────────────────
   const { data: knowledgeRows } = await supabaseAdmin
@@ -136,7 +138,7 @@ export async function syncTenantKnowledgeToVapi(tenantId: string): Promise<{ syn
     })
     .filter(Boolean)
 
-  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, contextBlocks.join('\n\n'))
+  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, contextBlocks.join('\n\n'), businessHours)
 
   // ── 3. Fetch existing assistant to preserve model/voice settings ──────────
   const getRes = await fetch(`${VAPI_API}/assistant/${assistantId}`, {

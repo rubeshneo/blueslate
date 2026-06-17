@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from('leads')
-      .select('id, caller_name, caller_phone, core_interest, call_outcome, booking_slot, parsed_at, call_log_id')
+      .select('id, caller_name, caller_phone, core_interest, call_outcome, booking_slot, parsed_at, call_log_id, call_logs(full_transcript, recording_url, duration_seconds)')
       .eq('tenant_id', TENANT_ID)
       .order('parsed_at', { ascending: false })
       .limit(PAGE_SIZE + 1) // +1 to detect hasMore

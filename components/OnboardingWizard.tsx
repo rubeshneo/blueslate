@@ -37,8 +37,7 @@ const PLANS = [
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 60)
 
-export default function OnboardingWizard({ tenantId, userName, userEmail, initial }: {
-  tenantId: string
+export default function OnboardingWizard({ userName, userEmail, initial }: {
   userName: string
   userEmail: string
   initial: Initial
@@ -58,6 +57,12 @@ export default function OnboardingWizard({ tenantId, userName, userEmail, initia
   const [slugTouched, setSlugTouched] = useState(!!initial.slug)
   const [agentName, setAgentName] = useState(initial.agentName || 'Sage')
   const [greeting, setGreeting] = useState(initial.agentGreeting || '')
+
+  // Phone provisioning state (Launch step)
+  type PhoneResult = { phoneNumber: string; assistantId: string }
+  const [phoneResult, setPhoneResult] = useState<PhoneResult | null>(null)
+  const [provisioning, setProvisioning] = useState(false)
+  const [provisionError, setProvisionError] = useState('')
   const [url, setUrl] = useState(initial.franchiseUrl)
   const [scrapeResult, setScrapeResult] = useState<{ title?: string; type?: string } | null>(
     initial.hasKnowledge ? { type: 'existing' } : null
@@ -131,7 +136,7 @@ export default function OnboardingWizard({ tenantId, userName, userEmail, initia
       const res = await fetch('/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), tenant_id: tenantId }),
+        body: JSON.stringify({ url: url.trim() }),
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || 'Could not scrape that URL.')
@@ -140,6 +145,25 @@ export default function OnboardingWizard({ tenantId, userName, userEmail, initia
       setError(e instanceof Error ? e.message : 'Scrape failed.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function runProvision() {
+    setProvisionError('')
+    setProvisioning(true)
+    try {
+      const res = await fetch('/api/vapi/provision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'new' }),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || 'Provisioning failed.')
+      setPhoneResult({ phoneNumber: j.phoneNumber, assistantId: j.assistantId })
+    } catch (e) {
+      setProvisionError(e instanceof Error ? e.message : 'Provisioning failed.')
+    } finally {
+      setProvisioning(false)
     }
   }
 
@@ -333,11 +357,11 @@ export default function OnboardingWizard({ tenantId, userName, userEmail, initia
               </h2>
               <p className="text-[var(--text-2)] max-w-md mx-auto mb-8">
                 {agentName} is configured on the <span className="font-bold text-[var(--text-1)]">{selectedPlan.name}</span> plan.
-                Wire up your phone number and go live — leads will flow into your dashboard automatically.
+                Activate your dedicated phone number below to start receiving calls.
               </p>
 
               {/* Summary */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto mb-8 text-left">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto mb-6 text-left">
                 {[
                   { icon: Crown, label: 'Plan', value: selectedPlan.name },
                   { icon: Building2, label: 'Franchise', value: bizName || '—' },
@@ -352,12 +376,49 @@ export default function OnboardingWizard({ tenantId, userName, userEmail, initia
                 ))}
               </div>
 
-              <button onClick={finish}
-                className="btn-primary py-3.5 px-8 text-xs mx-auto group overflow-hidden relative shadow-[0_0_24px_rgba(232,93,63,0.3)]">
-                <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
-                Go to Dashboard
-                <ArrowRight size={15} className="ml-2 group-hover:translate-x-1.5 transition-transform" />
-              </button>
+              {/* ── Phone Provisioning Panel ── */}
+              <div className="max-w-xl mx-auto mb-8 text-left">
+                {phoneResult ? (
+                  <div className="p-4 bg-[var(--live)]/10 border border-[var(--live)]/30 rounded-xl" style={{ animation: 'fade-up 0.3s ease-out both' }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Check size={15} className="text-[var(--live)] shrink-0" />
+                      <span className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--live)]">AI Receptionist Active</span>
+                    </div>
+                    <p className="text-sm font-bold text-[var(--text-1)] ml-[23px]">{phoneResult.phoneNumber}</p>
+                    <p className="text-xs text-[var(--text-3)] ml-[23px] mt-0.5">Callers can reach {agentName || 'your agent'} at this number.</p>
+                  </div>
+                ) : (
+                  <div className="p-5 border border-[var(--border)] rounded-xl bg-[var(--surface-2)]">
+                    <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--text-3)] mb-1">Step 5 — Provision phone number</p>
+                    <p className="text-[13px] text-[var(--text-2)] mb-4">Get a dedicated AI receptionist number. Vapi buys and configures it automatically.</p>
+                    {provisionError && (
+                      <p className="text-[12px] text-[var(--danger)] border border-[var(--danger)]/30 bg-[var(--danger)]/5 rounded-md px-3 py-2 mb-3">{provisionError}</p>
+                    )}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button onClick={runProvision} disabled={provisioning}
+                        className="btn-primary py-2.5 px-5 text-[11px] group overflow-hidden relative flex-1 justify-center">
+                        <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
+                        {provisioning
+                          ? <><Loader2 size={13} className="animate-spin mr-1.5" /> Provisioning…</>
+                          : <><Rocket size={13} className="mr-1.5" /> Activate AI Receptionist</>}
+                      </button>
+                      <button onClick={finish} disabled={provisioning}
+                        className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--text-3)] hover:text-[var(--accent)] transition-colors disabled:opacity-40 self-center">
+                        Skip for now →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {phoneResult && (
+                <button onClick={finish}
+                  className="btn-primary py-3.5 px-8 text-xs mx-auto group overflow-hidden relative shadow-[0_0_24px_rgba(232,93,63,0.3)]">
+                  <span className="absolute inset-0 bg-white/20 -translate-x-full group-hover:animate-[scan-right_1.5s_ease-in-out_infinite]" />
+                  Go to Dashboard
+                  <ArrowRight size={15} className="ml-2 group-hover:translate-x-1.5 transition-transform" />
+                </button>
+              )}
               {selectedPlan.id !== 'starter' && (
                 <p className="text-[10px] text-[var(--text-3)] font-display mt-4">
                   Billing for {selectedPlan.name} ({selectedPlan.price}{selectedPlan.period}) starts after your 14-day trial.

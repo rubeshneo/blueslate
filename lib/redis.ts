@@ -90,3 +90,20 @@ export async function deleteNotification(userId: string, notifId: string): Promi
   await redis.del(k)
   if (filtered.length > 0) await redis.rpush(k, ...filtered)
 }
+
+// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// Sliding-window counter via Redis INCR + EXPIRE.
+// Falls back to { allowed: true } when Redis is not configured (dev mode).
+
+export async function rateLimit(
+  identifier: string,  // e.g. `scrape:${tenantId}`
+  limit:      number,  // max requests per window
+  windowSecs: number,  // window duration in seconds
+): Promise<{ allowed: boolean; remaining: number }> {
+  if (!redis) return { allowed: true, remaining: limit }
+  const k = `ratelimit:${identifier}`
+  const count = await redis.incr(k)
+  if (count === 1) await redis.expire(k, windowSecs)
+  const remaining = Math.max(0, limit - count)
+  return { allowed: count <= limit, remaining }
+}

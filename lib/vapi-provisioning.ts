@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase'
+import type { BusinessHoursConfig } from '@/lib/supabase'
 
 const VAPI_API = 'https://api.vapi.ai'
 
@@ -41,15 +42,40 @@ export function buildContextBlock(d: Record<string, unknown>): string {
   return lines.join('\n')
 }
 
+// ── Business hours formatter ──────────────────────────────────────────────────
+
+const DAY_NAMES: Record<string, string> = {
+  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday',
+  thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+}
+
+function formatBusinessHours(bh: BusinessHoursConfig): string {
+  const openDays = Object.entries(bh.hours)
+    .filter(([, d]) => d.enabled)
+    .map(([k, d]) => `${DAY_NAMES[k]} ${d.open}–${d.close}`)
+
+  const lines: string[] = []
+  if (openDays.length > 0) {
+    lines.push(`BUSINESS HOURS (${bh.timezone}): ${openDays.join(', ')}`)
+  }
+  if (bh.after_hours_message) {
+    lines.push(`AFTER-HOURS: If someone calls outside business hours, say: "${bh.after_hours_message}" — then offer to take their contact details for a morning callback.`)
+  }
+  return lines.join('\n')
+}
+
 /**
  * Build a natural receptionist system prompt for a per-tenant Vapi assistant.
  * Same style as the Blueslate demo but scoped to the franchise's own context.
  */
 export function buildTenantSystemPrompt(
-  agentName: string,
-  greeting: string,
-  context: string,
+  agentName:     string,
+  greeting:      string,
+  context:       string,
+  businessHours?: BusinessHoursConfig | null,
 ): string {
+  const hoursSection = businessHours ? `\n${formatBusinessHours(businessHours)}\n` : ''
+
   return `You are ${agentName}, the AI receptionist for this franchise business — speaking with customers on the phone.
 
 PERSONALITY & TONE:
@@ -63,7 +89,7 @@ YOUR OPENING (say this when the call starts):
 
 BUSINESS INFORMATION (use this to answer customer questions):
 ${context || 'No specific business information available — answer warmly and offer to have someone follow up.'}
-
+${hoursSection}
 LEAD CAPTURE (critical — do this naturally):
 - When a caller shows interest in booking, pricing, programs, or visiting — ask for their contact details
 - Say warmly: "That's great! I'd love to make sure someone follows up with you directly. Could I get your name and the best number to reach you?"
@@ -104,15 +130,16 @@ async function createAssistantForTenant(
 
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
-    .select('id, name, agent_name, agent_greeting')
+    .select('id, name, agent_name, agent_greeting, business_hours')
     .eq('id', tenantId)
     .single()
 
   if (tenantErr || !tenant) throw new Error(`Tenant not found: ${tenantId}`)
 
-  const agentName = (tenant.agent_name as string | null) ?? 'Sage'
-  const greeting  = (tenant.agent_greeting as string | null)
+  const agentName    = (tenant.agent_name    as string | null) ?? 'Sage'
+  const greeting     = (tenant.agent_greeting as string | null)
     ?? `Thank you for calling ${tenant.name}! This is ${agentName}. How can I help you today?`
+  const businessHours = (tenant.business_hours as BusinessHoursConfig | null) ?? null
 
   // Clone model/voice from demo assistant
   const demoRes = await fetch(`${VAPI_API}/assistant/${demoId}`, {
@@ -139,7 +166,7 @@ async function createAssistantForTenant(
     .filter(Boolean)
     .join('\n\n')
 
-  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, context)
+  const systemPrompt = buildTenantSystemPrompt(agentName, greeting, context, businessHours)
 
   const createRes = await fetch(`${VAPI_API}/assistant`, {
     method: 'POST',

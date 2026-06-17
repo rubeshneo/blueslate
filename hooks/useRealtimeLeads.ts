@@ -3,6 +3,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 
+export type LeadCallLog = {
+  full_transcript: string | null
+  recording_url: string | null
+  duration_seconds: number | null
+}
+
 export type Lead = {
   id: string
   caller_name: string | null
@@ -11,6 +17,8 @@ export type Lead = {
   call_outcome: string
   booking_slot: string | null
   parsed_at: string
+  call_log_id?: string | null
+  call_logs?: LeadCallLog | null
 }
 
 export function useRealtimeLeads(tenantId: string, initialLeads: Lead[]) {
