@@ -20,15 +20,13 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const body = await req.json()
-  const targetUserId = body.userId ?? user?.id
-  if (!targetUserId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { title, message, type = 'info' } = body
+  // Never use body.userId — always scope to the authenticated user
   if (!title || !message) {
     return NextResponse.json({ error: 'title and message required' }, { status: 400 })
   }
 
-  const notif = await createNotification(targetUserId, { title, message, type })
+  const notif = await createNotification(user.id, { title, message, type })
   return NextResponse.json({ data: notif })
 }
 

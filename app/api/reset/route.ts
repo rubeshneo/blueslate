@@ -1,27 +1,24 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase-server'
 
 export async function GET() {
-  const tenantId = process.env.TENANT_ID!
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (user.email !== process.env.ADMIN_EMAIL) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
-  // 1. Delete all leads
+  const tenantId = process.env.TENANT_ID
+  if (!tenantId) return NextResponse.json({ error: 'TENANT_ID not configured' }, { status: 500 })
+
   await supabaseAdmin.from('leads').delete().eq('tenant_id', tenantId)
-
-  // 2. Delete all call logs
   await supabaseAdmin.from('call_logs').delete().eq('tenant_id', tenantId)
-
-  // 3. Delete all knowledge context
   await supabaseAdmin.from('knowledge_context').delete().eq('tenant_id', tenantId)
-
-  // 4. Reset agent name back to default
   await supabaseAdmin.from('tenants').update({ agent_name: 'AI Receptionist' }).eq('id', tenantId)
-
-  // 5. Clear the AI playground test cookie
   cookies().delete(`playground_tested_${tenantId}`)
 
-  return NextResponse.json({ 
-    success: true, 
-    message: 'Your account has been completely wiped and reset!' 
-  })
+  return NextResponse.json({ success: true, message: 'Account wiped and reset.' })
 }

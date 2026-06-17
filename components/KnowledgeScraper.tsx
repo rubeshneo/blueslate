@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   Globe, RefreshCw, CheckCircle2, AlertCircle, ChevronDown, ChevronUp,
-  ImageIcon, Trash2, ChevronLeft, ChevronRight,
+  ImageIcon, Trash2, ChevronLeft, ChevronRight, Pencil, Check, X,
 } from 'lucide-react'
 import ImageUploader from './ImageUploader'
 
@@ -31,6 +31,8 @@ interface KnowledgeContext {
   structured_data: Record<string, unknown> | null
 }
 
+type SyncStatus = null | 'syncing' | 'synced' | 'error'
+
 function Tag({ text }: { text: string }) {
   return (
     <span className="font-display font-bold uppercase inline-block px-2.5 py-1 text-[9px] tracking-[0.14em] bg-[var(--accent-tint)] border border-[var(--border)] text-[var(--text-1)]">
@@ -52,18 +54,267 @@ function DataRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function KnowledgeDisplay({ data, context }: { data: StructuredData; context: KnowledgeContext }) {
-  const [showFaqs, setShowFaqs] = useState(false)
+// ── Inline editable text field (pricing / hours) ──────────────────────────────
+function EditableTextField({
+  fieldKey,
+  value,
+  contextId,
+  onSaved,
+}: {
+  fieldKey:  'pricing' | 'hours'
+  value:     string
+  contextId: string
+  onSaved:   (fieldKey: string, newValue: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState(value)
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+  const [sync,    setSync]    = useState<SyncStatus>(null)
+
+  const startEdit = () => { setDraft(value); setError(''); setEditing(true) }
+  const cancel    = () => { setEditing(false); setError('') }
+
+  const save = async () => {
+    const trimmed = draft.trim()
+    if (trimmed === value) { setEditing(false); return }
+
+    setSaving(true)
+    setError('')
+    onSaved(fieldKey, trimmed) // optimistic
+
+    try {
+      const res = await fetch(`/api/knowledge-context/${contextId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ structured_data: { [fieldKey]: trimmed } }),
+      })
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error || 'Save failed')
+      }
+      setSync('syncing')
+      setEditing(false)
+      fetch('/api/vapi/sync', { method: 'POST' })
+        .then((r) => setSync(r.ok ? 'synced' : 'error'))
+        .catch(() => setSync('error'))
+        .finally(() => { setTimeout(() => setSync(null), 3000) })
+    } catch (err) {
+      onSaved(fieldKey, value) // rollback
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={2}
+          autoFocus
+          disabled={saving}
+          className="input-field w-full text-[12px] font-body resize-y min-h-[52px]"
+          style={{ padding: '6px 8px' }}
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-display font-bold uppercase tracking-[0.12em] bg-[var(--accent)] text-white border-none rounded cursor-pointer disabled:opacity-50"
+          >
+            <Check size={10} /> {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={cancel} disabled={saving} className="btn-ghost text-[10px]">
+            <X size={10} /> Cancel
+          </button>
+        </div>
+        {error && (
+          <p className="text-[10px] text-[var(--danger)] flex items-center gap-1">
+            <AlertCircle size={10} /> {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-start gap-2 group/edit">
+      <span className="flex-1">
+        {value || <span className="text-[var(--text-3)] italic">Not set</span>}
+      </span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {sync === 'syncing' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--accent)] animate-pulse">Syncing…</span>
+        )}
+        {sync === 'synced' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--live)] flex items-center gap-0.5">
+            <CheckCircle2 size={9} /> Synced
+          </span>
+        )}
+        {sync === 'error' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--danger)]">Sync failed</span>
+        )}
+        <button
+          onClick={startEdit}
+          title={`Edit ${fieldKey}`}
+          className="opacity-0 group-hover/edit:opacity-100 flex items-center justify-center w-5 h-5 rounded border border-[var(--border)] text-[var(--text-3)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
+          style={{ background: 'transparent', cursor: 'pointer' }}
+        >
+          <Pencil size={9} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Inline editable services field (tag list → comma CSV input) ───────────────
+function EditableServicesField({
+  value,
+  contextId,
+  onSaved,
+}: {
+  value:     string[]
+  contextId: string
+  onSaved:   (fieldKey: string, newValue: unknown) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState(value.join(', '))
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+  const [sync,    setSync]    = useState<SyncStatus>(null)
+
+  const startEdit = () => { setDraft(value.join(', ')); setError(''); setEditing(true) }
+  const cancel    = () => { setEditing(false); setError('') }
+
+  const save = async () => {
+    const parsed = draft.split(',').map((s) => s.trim()).filter(Boolean)
+    if (JSON.stringify(parsed) === JSON.stringify(value)) { setEditing(false); return }
+
+    setSaving(true)
+    setError('')
+    onSaved('services', parsed) // optimistic
+
+    try {
+      const res = await fetch(`/api/knowledge-context/${contextId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ structured_data: { services: parsed } }),
+      })
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error || 'Save failed')
+      }
+      setSync('syncing')
+      setEditing(false)
+      fetch('/api/vapi/sync', { method: 'POST' })
+        .then((r) => setSync(r.ok ? 'synced' : 'error'))
+        .catch(() => setSync('error'))
+        .finally(() => { setTimeout(() => setSync(null), 3000) })
+    } catch (err) {
+      onSaved('services', value) // rollback
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoFocus
+          disabled={saving}
+          placeholder="Minecraft, Rocket League, Fortnite"
+          className="input-field w-full text-[12px] font-body"
+          style={{ padding: '6px 8px' }}
+        />
+        <p className="text-[9px] font-display uppercase tracking-[0.1em] text-[var(--text-3)]">
+          Comma-separated list
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-display font-bold uppercase tracking-[0.12em] bg-[var(--accent)] text-white border-none rounded cursor-pointer disabled:opacity-50"
+          >
+            <Check size={10} /> {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={cancel} disabled={saving} className="btn-ghost text-[10px]">
+            <X size={10} /> Cancel
+          </button>
+        </div>
+        {error && (
+          <p className="text-[10px] text-[var(--danger)] flex items-center gap-1">
+            <AlertCircle size={10} /> {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-start gap-2 group/edit">
+      <div className="flex flex-wrap gap-[5px] flex-1">
+        {value.length > 0
+          ? value.map((s, i) => <Tag key={i} text={s} />)
+          : <span className="text-[var(--text-3)] italic text-[12px]">Not set</span>
+        }
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+        {sync === 'syncing' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--accent)] animate-pulse">Syncing…</span>
+        )}
+        {sync === 'synced' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--live)] flex items-center gap-0.5">
+            <CheckCircle2 size={9} /> Synced
+          </span>
+        )}
+        {sync === 'error' && (
+          <span className="text-[9px] font-display uppercase tracking-[0.12em] text-[var(--danger)]">Sync failed</span>
+        )}
+        <button
+          onClick={startEdit}
+          title="Edit services"
+          className="opacity-0 group-hover/edit:opacity-100 flex items-center justify-center w-5 h-5 rounded border border-[var(--border)] text-[var(--text-3)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
+          style={{ background: 'transparent', cursor: 'pointer' }}
+        >
+          <Pencil size={9} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── KnowledgeDisplay ──────────────────────────────────────────────────────────
+function KnowledgeDisplay({
+  data: initialData,
+  context,
+}: {
+  data:    StructuredData
+  context: KnowledgeContext
+}) {
+  const [showFaqs,  setShowFaqs]  = useState(false)
+  const [localData, setLocalData] = useState<StructuredData>(initialData)
   const isVision = context.source_url.startsWith('vision-upload:')
 
-  if (data.parse_error) {
+  const handleFieldSaved = (fieldKey: string, newValue: unknown) => {
+    setLocalData((prev) => ({ ...prev, [fieldKey]: newValue }))
+  }
+
+  if (localData.parse_error) {
     return (
       <div className="font-body border border-[var(--warn)] p-4 text-[12px] text-[var(--warn)] bg-[rgba(255,174,0,0.05)]">
         <p className="font-display font-bold uppercase text-[9px] tracking-[0.18em] mb-2">
           Extraction partially succeeded
         </p>
         <pre className="text-[11px] whitespace-pre-wrap font-display overflow-auto max-h-[200px] border-t border-[var(--warn)] pt-2 mt-2">
-          {data.raw_extraction}
+          {localData.raw_extraction}
         </pre>
       </div>
     )
@@ -76,7 +327,7 @@ function KnowledgeDisplay({ data, context }: { data: StructuredData; context: Kn
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-display font-bold uppercase text-[16px] tracking-[0.06em] text-[var(--text-1)]">
-              {safe(data.business_name) || 'Unknown'}
+              {safe(localData.business_name) || 'Unknown'}
             </h3>
             {isVision && (
               <span className="font-display font-bold uppercase flex items-center gap-1 text-[8px] tracking-[0.16em] bg-[var(--accent)] text-white px-2 py-0.5">
@@ -84,14 +335,12 @@ function KnowledgeDisplay({ data, context }: { data: StructuredData; context: Kn
               </span>
             )}
           </div>
-          {data.tagline && (
-            <p className="font-body text-[13px] text-[var(--accent)] mt-1.5">
-              {safe(data.tagline)}
-            </p>
+          {localData.tagline && (
+            <p className="font-body text-[13px] text-[var(--accent)] mt-1.5">{safe(localData.tagline)}</p>
           )}
-          {data.description && (
+          {localData.description && (
             <p className="font-body text-[13px] text-[var(--text-2)] mt-2 leading-relaxed max-w-[480px]">
-              {safe(data.description)}
+              {safe(localData.description)}
             </p>
           )}
         </div>
@@ -105,38 +354,59 @@ function KnowledgeDisplay({ data, context }: { data: StructuredData; context: Kn
 
       {/* Data rows */}
       <div>
-        {safeArr(data.services).length > 0 && (
-          <DataRow label="Services">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {safeArr(data.services).map((s, i) => <Tag key={i} text={s} />)}
-            </div>
-          </DataRow>
-        )}
-        {safeArr(data.age_groups).length > 0 && (
+        {/* Services — editable */}
+        <DataRow label="Services">
+          <EditableServicesField
+            value={safeArr(localData.services)}
+            contextId={context.id}
+            onSaved={handleFieldSaved}
+          />
+        </DataRow>
+
+        {safeArr(localData.age_groups).length > 0 && (
           <DataRow label="Age Groups">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {safeArr(data.age_groups).map((a, i) => <Tag key={i} text={a} />)}
+              {safeArr(localData.age_groups).map((a, i) => <Tag key={i} text={a} />)}
             </div>
           </DataRow>
         )}
-        {data.contact_phone && <DataRow label="Phone">{safe(data.contact_phone)}</DataRow>}
-        {data.contact_email && <DataRow label="Email">{safe(data.contact_email)}</DataRow>}
-        {data.location      && <DataRow label="Location">{safe(data.location)}</DataRow>}
-        {data.hours         && <DataRow label="Hours">{safe(data.hours)}</DataRow>}
-        {data.pricing       && <DataRow label="Pricing">{safe(data.pricing)}</DataRow>}
-        {data.booking_cta   && (
+        {localData.contact_phone && <DataRow label="Phone">{safe(localData.contact_phone)}</DataRow>}
+        {localData.contact_email && <DataRow label="Email">{safe(localData.contact_email)}</DataRow>}
+        {localData.location      && <DataRow label="Location">{safe(localData.location)}</DataRow>}
+
+        {/* Hours — editable */}
+        <DataRow label="Hours">
+          <EditableTextField
+            fieldKey="hours"
+            value={safe(localData.hours)}
+            contextId={context.id}
+            onSaved={handleFieldSaved}
+          />
+        </DataRow>
+
+        {/* Pricing — editable */}
+        <DataRow label="Pricing">
+          <EditableTextField
+            fieldKey="pricing"
+            value={safe(localData.pricing)}
+            contextId={context.id}
+            onSaved={handleFieldSaved}
+          />
+        </DataRow>
+
+        {localData.booking_cta && (
           <DataRow label="Booking CTA">
-            <span style={{ color: 'var(--live)' }}>{safe(data.booking_cta)}</span>
+            <span style={{ color: 'var(--live)' }}>{safe(localData.booking_cta)}</span>
           </DataRow>
         )}
       </div>
 
       {/* Selling points */}
-      {safeArr(data.key_selling_points).length > 0 && (
+      {safeArr(localData.key_selling_points).length > 0 && (
         <div className="pt-4">
           <p className="label-sm mb-3">Key Selling Points</p>
           <div className="flex flex-col gap-2">
-            {safeArr(data.key_selling_points).map((p, i) => (
+            {safeArr(localData.key_selling_points).map((p, i) => (
               <div key={i} className="flex gap-2.5 items-start bg-[var(--surface-2)] p-2.5 rounded-md border border-[var(--border)] border-l-2 border-l-[var(--accent)]">
                 <CheckCircle2 size={14} className="text-[var(--accent)] shrink-0 mt-0.5" />
                 <span className="text-[13px] text-[var(--text-2)]">{p}</span>
@@ -147,15 +417,15 @@ function KnowledgeDisplay({ data, context }: { data: StructuredData; context: Kn
       )}
 
       {/* FAQs */}
-      {Array.isArray(data.faqs) && data.faqs.length > 0 && (
+      {Array.isArray(localData.faqs) && localData.faqs.length > 0 && (
         <div className="pt-4">
           <button onClick={() => setShowFaqs(!showFaqs)} className="btn-ghost">
             {showFaqs ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            {showFaqs ? 'Hide' : 'Show'} FAQs ({data.faqs.length})
+            {showFaqs ? 'Hide' : 'Show'} FAQs ({localData.faqs.length})
           </button>
           {showFaqs && (
             <div className="mt-3 flex flex-col gap-2">
-              {data.faqs.map((faq: unknown, i: number) => {
+              {localData.faqs.map((faq: unknown, i: number) => {
                 const f = faq as Record<string, unknown>
                 return (
                   <div key={i} className="bg-[var(--surface-2)] border border-[var(--border)] p-3.5 hover:border-[var(--accent)] transition-colors">
@@ -180,7 +450,7 @@ function KnowledgeDisplay({ data, context }: { data: StructuredData; context: Kn
 function SourceCard({
   ctx, expanded, onToggle, onDelete, deleting,
 }: {
-  ctx: KnowledgeContext
+  ctx:      KnowledgeContext
   expanded: boolean
   onToggle: () => void
   onDelete: () => void
@@ -265,15 +535,15 @@ export default function KnowledgeScraper({
   tenantId:        string
   initialContexts: KnowledgeContext[]
 }) {
-  const [tab,        setTab]       = useState<'url' | 'vision'>('url')
-  const [url,        setUrl]       = useState('')
-  const [loading,    setLoading]   = useState(false)
-  const [elapsed,    setElapsed]   = useState(0)
-  const [error,      setError]     = useState('')
-  const [sources,    setSources]   = useState<KnowledgeContext[]>(initialContexts)
+  const [tab,        setTab]        = useState<'url' | 'vision'>('url')
+  const [url,        setUrl]        = useState('')
+  const [loading,    setLoading]    = useState(false)
+  const [elapsed,    setElapsed]    = useState(0)
+  const [error,      setError]      = useState('')
+  const [sources,    setSources]    = useState<KnowledgeContext[]>(initialContexts)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [page,       setPage]      = useState(0)
-  const [deleting,   setDeleting]  = useState<Set<string>>(new Set())
+  const [page,       setPage]       = useState(0)
+  const [deleting,   setDeleting]   = useState<Set<string>>(new Set())
 
   const filteredSources = sources.filter((s) =>
     tab === 'vision' ? s.source_url.startsWith('vision-upload:') : !s.source_url.startsWith('vision-upload:')
@@ -285,9 +555,7 @@ export default function KnowledgeScraper({
     setSources((prev) => {
       const idx = prev.findIndex((s) => s.id === ctx.id)
       if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = ctx
-        return next
+        const next = [...prev]; next[idx] = ctx; return next
       }
       return [ctx, ...prev]
     })
@@ -301,7 +569,6 @@ export default function KnowledgeScraper({
       await fetch(`/api/knowledge-context/${id}`, { method: 'DELETE' })
       setSources((prev) => prev.filter((s) => s.id !== id))
       if (expandedId === id) setExpandedId(null)
-      // clamp page if we removed the last item on this page
       setPage((p) => {
         const newTotal = Math.ceil((sources.length - 1) / PAGE_SIZE)
         return p >= newTotal ? Math.max(0, newTotal - 1) : p
@@ -349,8 +616,8 @@ export default function KnowledgeScraper({
         {/* Tab bar */}
         <div className="flex border-b border-[var(--border)] bg-[var(--surface-2)]">
           {([
-            { key: 'url' as const,    label: 'URL Scraper',   icon: Globe      },
-            { key: 'vision' as const, label: 'Vision Upload', icon: ImageIcon  },
+            { key: 'url'    as const, label: 'URL Scraper',   icon: Globe     },
+            { key: 'vision' as const, label: 'Vision Upload', icon: ImageIcon },
           ]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -454,7 +721,7 @@ export default function KnowledgeScraper({
         <div className="text-center py-16 px-4 card">
           {tab === 'vision'
             ? <ImageIcon size={40} className="text-[var(--border-strong)] mx-auto mb-4 opacity-50" />
-            : <Globe size={40} className="text-[var(--border-strong)] mx-auto mb-4 opacity-50" />}
+            : <Globe    size={40} className="text-[var(--border-strong)] mx-auto mb-4 opacity-50" />}
           <p className="font-body text-[14px] text-[var(--text-3)] max-w-sm mx-auto">
             {tab === 'vision'
               ? 'No images uploaded yet — upload a flyer or price list above'

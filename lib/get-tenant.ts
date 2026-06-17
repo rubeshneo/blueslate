@@ -42,8 +42,10 @@ export async function getTenantId(): Promise<string> {
 
   if (error || !newTenant) {
     console.error('[getTenantId] Failed to create tenant:', error)
-    // Last-resort fallback so the app doesn't hard-crash on a DB hiccup
-    return process.env.TENANT_ID!
+    const fallback = process.env.TENANT_ID
+    if (!fallback) throw new Error('[getTenantId] Tenant creation failed and TENANT_ID is not configured')
+    console.warn('[getTenantId] Tenant creation failed — falling back to TENANT_ID env default')
+    return fallback
   }
 
   // Warm JWT cache

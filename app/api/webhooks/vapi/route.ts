@@ -9,7 +9,7 @@ import { sendNurtureSms } from '@/lib/sms'
 // Without this check any internet caller can inject fake leads.
 function verifyVapiSignature(rawBody: string, signature: string | null): boolean {
   const secret = process.env.VAPI_WEBHOOK_SECRET
-  if (!secret) return true // not configured → skip (dev / early stage)
+  if (!secret) return process.env.NODE_ENV === 'development' // only skip in local dev — block in prod
   if (!signature) return false
   const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
   try {
@@ -57,23 +57,8 @@ async function resolveTenantId(
     return envDefault
   }
 
-  // Attempt 3: first active tenant in the database (last resort)
-  const { data } = await supabaseAdmin
-    .from('tenants')
-    .select('id')
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (data?.id) {
-    console.warn(
-      '[Vapi] tenant_id missing — resolved from first active tenant record',
-      { vapiCallId, resolved: data.id },
-    )
-    return data.id
-  }
-
+  // No further fallback — returning null causes the webhook to 400, which is safe
+  // and prevents cross-tenant data assignment in multi-tenant deployments.
   return null
 }
 
@@ -97,10 +82,24 @@ export async function POST(req: NextRequest) {
     }
 
     const call          = message.call
+    const endedAtRaw:   string = call?.endedAt ?? null
+
+    // Replay protection: reject end-of-call-reports where the call ended >10 minutes ago.
+    // This is generous enough to survive Vapi's built-in retry window (~5 min) while
+    // blocking replayed or recycled webhook payloads.
+    if (endedAtRaw) {
+      const ageMs = Date.now() - new Date(endedAtRaw).getTime()
+      if (ageMs > 10 * 60 * 1000) {
+        console.warn('[Vapi] Replay rejected: call.endedAt is older than 10 minutes', {
+          vapiCallId: call?.id, endedAt: endedAtRaw, ageMs,
+        })
+        return NextResponse.json({ error: 'Request expired' }, { status: 400 })
+      }
+    }
     const transcript:   string = message.transcript     ?? ''
     const recordingUrl: string = message.recordingUrl   ?? null
     const startedAt:    string = call?.startedAt        ?? null
-    const endedAt:      string = call?.endedAt          ?? null
+    const endedAt:      string = endedAtRaw
     const callerNumber: string = call?.customer?.number ?? null
     const vapiCallId:   string = call?.id               ?? null
     const assistantId:  string | null = call?.assistantId ?? null

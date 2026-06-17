@@ -4,11 +4,17 @@ import { scrapeUrl } from '@/lib/scraper'
 import { extractKnowledge, extractKnowledgeSocial } from '@/lib/claude'
 import { supabaseAdmin } from '@/lib/supabase'
 import { syncTenantKnowledgeToVapi } from '@/lib/vapi'
+import { rateLimit } from '@/lib/redis'
+import { getTenantId } from '@/lib/get-tenant'
 
 const ScrapeSchema = z.object({
-  url:       z.string().min(1, 'URL is required').max(2000),
-  tenant_id: z.string().uuid('Invalid tenant_id'),
+  url: z.string().min(1, 'URL is required').max(2000),
+  // tenant_id is derived server-side from the session — never trusted from the client
 })
+
+// 5 scrapes per tenant per 60 seconds — protects Jina.ai + Groq from abuse
+const RATE_LIMIT    = 5
+const RATE_WINDOW_S = 60
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +22,17 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
     }
-    const { url, tenant_id } = parsed.data
+    const { url } = parsed.data
+    const tenant_id = await getTenantId()
+
+    const { allowed, remaining } = await rateLimit(`scrape:${tenant_id}`, RATE_LIMIT, RATE_WINDOW_S)
+    if (!allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Max ${RATE_LIMIT} scrapes per minute. Try again shortly.` },
+        { status: 429, headers: { 'Retry-After': String(RATE_WINDOW_S), 'X-RateLimit-Remaining': '0' } },
+      )
+    }
+    void remaining // consumed — no further action needed
 
     // Loop A: Instant Knowledge Loop
     const { rawText, title, isSocial } = await scrapeUrl(url)
