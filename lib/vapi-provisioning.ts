@@ -3,6 +3,19 @@ import type { BusinessHoursConfig } from '@/lib/supabase'
 
 const VAPI_API = 'https://api.vapi.ai'
 
+// Per-assistant webhook config so end-of-call-reports reach OUR webhook even when
+// the org-level Server URL isn't set in the Vapi dashboard. Without this, calls to
+// a freshly provisioned tenant assistant would never produce a call_log.
+function tenantServerConfig(): Record<string, unknown> | undefined {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl || appUrl.includes('localhost')) return undefined // Vapi can't reach localhost
+  const secret = process.env.VAPI_WEBHOOK_SECRET
+  return {
+    url: `${appUrl}/api/webhooks/vapi`,
+    ...(secret ? { secret } : {}),
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -168,12 +181,16 @@ async function createAssistantForTenant(
 
   const systemPrompt = buildTenantSystemPrompt(agentName, greeting, context, businessHours)
 
+  const serverConfig = tenantServerConfig()
   const createRes = await fetch(`${VAPI_API}/assistant`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name:         `${tenant.name} — ${agentName}`,
       firstMessage: greeting,
+      // Stamp the tenant so the webhook can attribute calls even if assistant lookup ever fails.
+      metadata:     { tenant_id: tenantId },
+      ...(serverConfig ? { server: serverConfig } : {}),
       model: {
         ...((demo.model ?? {}) as Record<string, unknown>),
         messages: [{ role: 'system', content: systemPrompt }],
@@ -380,6 +397,8 @@ export async function makeOutboundCall(
     body: JSON.stringify({
       assistantId:   row.vapi_agent_id,
       phoneNumberId: row.vapi_phone_number_id,
+      // Attribute the resulting end-of-call-report to this tenant (webhook reads call.metadata.tenant_id).
+      metadata: { tenant_id: tenantId },
       customer: {
         number: toNumber,
         name:   callerDesc,
