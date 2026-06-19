@@ -5,16 +5,24 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { sendNurtureSms } from '@/lib/sms'
 import { createNotification } from '@/lib/redis'
 
-// ── HMAC signature verification ───────────────────────────────────────────────
-// Vapi signs each webhook request with HMAC-SHA256 using VAPI_WEBHOOK_SECRET.
-// Without this check any internet caller can inject fake leads.
+// ── Webhook verification ──────────────────────────────────────────────────────
+// Accepts two modes depending on how Vapi is configured:
+//   1. Static header — Vapi dashboard → HTTP Headers → x-vapi-signature = VAPI_WEBHOOK_SECRET
+//   2. HMAC-SHA256   — Vapi signs body with secret (older / custom integrations)
+// Both comparisons use timingSafeEqual to prevent timing attacks.
 function verifyVapiSignature(rawBody: string, signature: string | null): boolean {
   const secret = process.env.VAPI_WEBHOOK_SECRET
   if (!secret) return process.env.NODE_ENV === 'development' // only skip in local dev — block in prod
   if (!signature) return false
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
   try {
-    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    const sigBuf    = Buffer.from(signature)
+    const secretBuf = Buffer.from(secret)
+    // Mode 1: direct secret match (Vapi static HTTP header)
+    if (sigBuf.length === secretBuf.length && timingSafeEqual(sigBuf, secretBuf)) return true
+    // Mode 2: HMAC-SHA256 match
+    const expected    = createHmac('sha256', secret).update(rawBody).digest('hex')
+    const expectedBuf = Buffer.from(expected)
+    return sigBuf.length === expectedBuf.length && timingSafeEqual(sigBuf, expectedBuf)
   } catch {
     return false
   }
