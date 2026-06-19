@@ -98,7 +98,7 @@ export default function AdminPage() {
     setRefreshing(true)
     try {
       const res = await fetch('/api/admin/stats')
-      if (res.status === 403) { router.replace('/'); return }
+      if (res.status === 403) { router.replace('/admin-login'); return }
       if (!res.ok) throw new Error('Failed to load')
       const data = await res.json()
       setSummary(data.summary)
