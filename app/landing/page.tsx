@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import {
-  Check, ArrowRight, Phone, Bot, Zap, Globe, Shield,
-  Sun, Moon, Sparkles, Users, TrendingUp, Clock, Star,
-  ChevronRight, Play, Mic, PhoneCall, Calendar, BarChart3,
-  MessageSquare, Database, Layers, Menu, X, Send, Loader2,
+  Check, ArrowRight, Phone, Bot, Zap, Globe,
+  Sun, Moon, Sparkles, Clock,
+  ChevronRight, Play, Mic, PhoneCall, BarChart3,
+  MessageSquare, Database, Menu, X, Send, Loader2,
   AlertCircle, ArrowUpRight
 } from 'lucide-react'
 
@@ -26,21 +26,6 @@ function useInView(threshold = 0.15) {
   return { ref, inView }
 }
 
-function useCountUp(target: number, duration = 1800, inView = false) {
-  const [count, setCount] = useState(0)
-  useEffect(() => {
-    if (!inView) return
-    let start = 0
-    const step = Math.ceil(target / (duration / 16))
-    const timer = setInterval(() => {
-      start += step
-      if (start >= target) { setCount(target); clearInterval(timer) }
-      else setCount(start)
-    }, 16)
-    return () => clearInterval(timer)
-  }, [inView, target, duration])
-  return count
-}
 
 /* ─── Sub-components ────────────────────────────────────────────────────── */
 
@@ -478,7 +463,9 @@ function SageDemo() {
         const d = await r.json() as { status?: string; endedReason?: string }
         if (d.status === 'ended' || d.status === 'failed') {
           if (d.endedReason) setObEndedReason(d.endedReason)
-          setObState('ended')
+          // Vapi marks ended ~3-5s before Twilio finishes tearing down the audio —
+          // wait 5s so the UI doesn't flip before the call physically disconnects
+          setTimeout(() => setObState('ended'), 5000)
         }
       } catch { /* ignore polling errors */ }
     }, 5000)
@@ -945,66 +932,6 @@ function NewsletterForm() {
   )
 }
 
-function DashboardMockup() {
-  const { ref, inView } = useInView()
-  const calls = useCountUp(47, 1400, inView)
-  const leads = useCountUp(23, 1600, inView)
-  const booked = useCountUp(11, 1800, inView)
-
-  return (
-    <div ref={ref} className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden shadow-[var(--shadow-lg)]">
-      {/* Window chrome */}
-      <div className="flex items-center gap-2 px-4 py-3 bg-[var(--surface-2)] border-b border-[var(--border)]">
-        <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F57]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#FFBB2C]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#28C840]" />
-        <span className="ml-4 text-[10px] font-display font-bold uppercase tracking-widest text-[var(--text-3)]">blueslate.ai — Dashboard</span>
-      </div>
-      {/* Stat row */}
-      <div className="grid grid-cols-3 divide-x divide-[var(--border)] border-b border-[var(--border)]">
-        {[
-          { label: 'Calls Handled', value: calls, unit: '', color: 'var(--accent)', icon: PhoneCall },
-          { label: 'Leads Parsed', value: leads, unit: '', color: 'var(--warn)', icon: Users },
-          { label: 'Trials Booked', value: booked, unit: '', color: 'var(--live)', icon: Calendar },
-        ].map(({ label, value, color, icon: Icon }) => (
-          <div key={label} className="p-4 text-center">
-            <Icon size={14} className="mx-auto mb-1.5" style={{ color }} />
-            <p className="font-display font-bold text-2xl text-[var(--text-1)]">{value}</p>
-            <p className="text-[9px] font-display uppercase tracking-widest text-[var(--text-3)] mt-0.5">{label}</p>
-          </div>
-        ))}
-      </div>
-      {/* Mini lead list */}
-      <div className="p-3 space-y-1.5">
-        <p className="font-display font-bold uppercase text-[9px] tracking-widest text-[var(--text-3)] px-1 mb-2">Recent Leads</p>
-        {[
-          { name: 'Marcus T.', status: 'Booked', time: '2m ago', color: 'var(--live)' },
-          { name: 'Sarah K.', status: 'Follow-up', time: '18m ago', color: 'var(--warn)' },
-          { name: 'Jordan M.', status: 'Booked', time: '1h ago', color: 'var(--live)' },
-          { name: 'Alex P.', status: 'Info Only', time: '2h ago', color: 'var(--text-3)' },
-        ].map((lead, i) => (
-          <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--accent-tint)] transition-colors cursor-default"
-            style={{ animation: `fade-up 0.4s ease-out both`, animationDelay: `${i * 0.1}s` }}>
-            <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full bg-[var(--border)] flex items-center justify-center">
-                <span className="text-[9px] font-display font-bold text-[var(--text-2)]">{lead.name[0]}</span>
-              </div>
-              <span className="text-[11px] font-display font-bold text-[var(--text-1)]">{lead.name}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-display font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border"
-                style={{ color: lead.color, borderColor: `${lead.color}30`, background: `${lead.color}10` }}>
-                {lead.status}
-              </span>
-              <span className="text-[9px] text-[var(--text-3)] font-display">{lead.time}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /* ─── Main Page ─────────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
@@ -1020,53 +947,10 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', handler)
   }, [])
 
-  /* ── Hero stats ── */
-  const heroRef = useRef<HTMLDivElement>(null)
-  const [heroInView, setHeroInView] = useState(false)
-  useEffect(() => {
-    const el = heroRef.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setHeroInView(true); obs.disconnect() } }, { threshold: 0.3 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
-  const heroLocations = useCountUp(200, 1600, heroInView)
-  const heroMinutes = useCountUp(50000, 2000, heroInView)
-  const heroRate = useCountUp(94, 1400, heroInView)
-
   /* ── Section InView hooks ── */
   const featuresView = useInView(0.1)
   const howView = useInView(0.1)
-  const testimonialsView = useInView(0.1)
   const ctaView = useInView(0.2)
-
-  const testimonials = [
-    {
-      quote: "We went from missing 30% of our inbound calls to zero. In the first week alone Sage booked 18 trial sessions while I was coaching on the floor.",
-      name: 'Derek Johnson',
-      role: 'Owner, XP League Frisco',
-      metric: '18 bookings',
-      metricLabel: 'Week 1',
-      avatar: 'D',
-      stars: 5,
-    },
-    {
-      quote: "Setup took 20 minutes — I just pasted my website URL. The AI knew our pricing, schedules, and FAQ better than some of my staff.",
-      name: 'Priya Nair',
-      role: 'Franchise Operator, 3 locations',
-      metric: '3 locations',
-      metricLabel: 'Deployed',
-      avatar: 'P',
-      stars: 5,
-    },
-    {
-      quote: "The lead dashboard is a game-changer. Every call is transcribed and the parent's info is automatically captured. My CRM stays clean.",
-      name: 'Marcus Webb',
-      role: 'GM, Urban Air Adventure Park',
-      metric: '94%',
-      metricLabel: 'Lead Capture',
-      avatar: 'M',
-      stars: 5,
-    },
-  ]
 
   const steps = [
     { num: '01', icon: Globe, title: 'Connect Your Franchise', desc: 'Paste your website URL. Blueslate scrapes your pricing, hours, programs, and FAQs in under 60 seconds — no manual data entry.', color: 'var(--accent)' },
@@ -1075,14 +959,14 @@ export default function LandingPage() {
   ]
 
   const features = [
-    { title: 'Zero Missed Calls', desc: 'AI answers every inbound call during peak hours, after hours, and weekends — so high-intent prospects are always greeted.', icon: Phone, delay: 0 },
-    { title: 'Instant Knowledge', desc: 'Automatically ingests your franchise website for real-time pricing, scheduling, and FAQ data. Updates with one click.', icon: Globe, delay: 0.08 },
-    { title: 'Smart Lead Parsing', desc: 'Extracts caller name, phone number, child age, and interests — then logs them to your secure lead dashboard in under 60 seconds.', icon: Zap, delay: 0.16 },
-    { title: 'Natural Voice AI', desc: 'Powered by Vapi and Groq — sounds human, handles interruptions, answers follow-ups, and builds trust with every caller.', icon: Mic, delay: 0.24 },
-    { title: 'Multi-Tenant Security', desc: 'Enterprise-grade row-level security ensures every franchise location\'s data is completely isolated and protected.', icon: Shield, delay: 0.32 },
-    { title: 'Live Analytics', desc: 'Monitor calls in real-time, read full transcripts, track booking conversion rates, and export leads to your CRM.', icon: BarChart3, delay: 0.4 },
-    { title: 'Multi-Location Ready', desc: 'Onboard unlimited franchise locations under one account. Each gets its own AI agent, phone number, and dashboard.', icon: Layers, delay: 0.48 },
-    { title: 'CRM Webhooks', desc: 'Automatically push leads to HubSpot, Salesforce, or any webhook endpoint the moment a call ends.', icon: Database, delay: 0.56 },
+    { title: 'Inbound Receptionist', desc: 'An AI voice agent answers every inbound call — after hours, weekends, peak times — and greets every caller.', icon: Phone, delay: 0 },
+    { title: 'Instant Knowledge', desc: 'Paste your website or Instagram. We scrape your pricing, hours, programs and FAQs into the agent in under 60 seconds.', icon: Globe, delay: 0.08 },
+    { title: 'Automatic Lead Capture', desc: "Every call is transcribed and the caller's name, phone and interest are extracted to your lead dashboard automatically.", icon: Zap, delay: 0.16 },
+    { title: 'Natural Voice AI', desc: 'Powered by Vapi and Groq — fast, human-sounding speech that handles interruptions and follow-up questions.', icon: Mic, delay: 0.24 },
+    { title: 'AI Agent Library', desc: 'Beyond the receptionist: provision follow-up, reminder, review and win-back AI callers — each from your knowledge base.', icon: Bot, delay: 0.32 },
+    { title: 'Outbound Follow-ups', desc: 'The follow-up agent calls leads who didn\'t book — bounded by a monthly call budget so costs stay in control.', icon: PhoneCall, delay: 0.4 },
+    { title: 'SMS Nurture', desc: 'Leads get an automatic confirmation/follow-up text via Twilio right after a call or web enquiry.', icon: MessageSquare, delay: 0.48 },
+    { title: 'Dashboard & Transcripts', desc: 'Real-time leads, call logs with full transcripts, analytics, and one-click CSV export of your leads.', icon: BarChart3, delay: 0.56 },
   ]
 
   const integrations = [
@@ -1115,7 +999,7 @@ export default function LandingPage() {
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-8 font-display uppercase text-[10px] tracking-widest font-bold text-[var(--text-2)]">
-            {[['#features', 'Features'], ['#how-it-works', 'How it Works'], ['#demo', 'Live Demo']].map(([href, label]) => (
+            {[['#features', 'Features'], ['#agents', 'AI Agents'], ['#how-it-works', 'How it Works'], ['#demo', 'Live Demo']].map(([href, label]) => (
               <a key={href} href={href} className="hover:text-[var(--accent)] hover:-translate-y-0.5 transition-all inline-block">{label}</a>
             ))}
           </div>
@@ -1143,7 +1027,7 @@ export default function LandingPage() {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="md:hidden bg-[var(--surface)] border-b border-[var(--border)] px-6 py-4 space-y-3" style={{ animation: 'slide-down 0.2s ease-out' }}>
-            {[['#features', 'Features'], ['#how-it-works', 'How it Works'], ['#demo', 'Live Demo']].map(([href, label]) => (
+            {[['#features', 'Features'], ['#agents', 'AI Agents'], ['#how-it-works', 'How it Works'], ['#demo', 'Live Demo']].map(([href, label]) => (
               <a key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="block font-display uppercase text-[11px] tracking-widest text-[var(--text-2)] hover:text-[var(--accent)] py-1.5">{label}</a>
             ))}
           </div>
@@ -1211,25 +1095,18 @@ export default function LandingPage() {
           <span className="hidden sm:inline text-[var(--text-3)]">· Available 24/7</span>
         </div>
 
-        {/* Hero stats */}
-        <div ref={heroRef} className="flex flex-wrap justify-center gap-3 mb-16" style={{ animation: 'fade-up 0.7s ease-out 0.55s both' }}>
-          <StatPill value={`${heroLocations}+`} label="franchise locations" icon={Users} color="var(--accent)" />
-          <StatPill value={`${heroMinutes.toLocaleString()}+`} label="calls handled" icon={PhoneCall} color="var(--live)" />
-          <StatPill value={`${heroRate}%`} label="lead capture rate" icon={TrendingUp} color="var(--accent-2)" />
-        </div>
-
-        {/* Dashboard preview */}
-        <div className="w-full max-w-5xl mx-auto relative" style={{ animation: 'fade-up 0.9s ease-out 0.7s both' }}>
-          {/* Glow */}
-          <div className="absolute -inset-4 bg-[var(--accent)] opacity-[0.06] blur-3xl rounded-3xl pointer-events-none" />
-          <DashboardMockup />
+        {/* Hero facts — real product facts, not fabricated metrics */}
+        <div className="flex flex-wrap justify-center gap-3 mb-8" style={{ animation: 'fade-up 0.7s ease-out 0.55s both' }}>
+          <StatPill value="24/7" label="always answering" icon={Clock} color="var(--accent)" />
+          <StatPill value="<1s" label="response time" icon={Zap} color="var(--live)" />
+          <StatPill value="$0" label="free during pilot" icon={Sparkles} color="var(--accent-2)" />
         </div>
       </section>
 
       {/* ── Social proof / integrations strip ── */}
       <section className="border-y border-[var(--border)] bg-[var(--surface-2)] py-6 px-6 relative z-10 overflow-hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--text-3)] whitespace-nowrap">Powered by</p>
+          <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--text-3)] whitespace-nowrap">Built with</p>
           <div className="flex flex-wrap justify-center gap-8">
             {integrations.map((int) => (
               <div key={int.name} className="flex items-center gap-2 group cursor-default">
@@ -1238,10 +1115,6 @@ export default function LandingPage() {
                 <span className="text-[10px] text-[var(--text-3)] font-display hidden sm:block">· {int.desc}</span>
               </div>
             ))}
-          </div>
-          <div className="flex items-center gap-2">
-            {[...Array(5)].map((_, i) => <Star key={i} size={12} className="fill-[var(--accent-2)] text-[var(--accent-2)]" />)}
-            <span className="text-xs text-[var(--text-3)] font-display ml-1">4.9 / 5</span>
           </div>
         </div>
       </section>
@@ -1294,7 +1167,7 @@ export default function LandingPage() {
           <div className={`text-center mb-16 transition-all duration-700 ${featuresView.inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--accent)] mb-3">Platform capabilities</p>
             <h2 className="text-4xl md:text-5xl font-display font-bold tracking-tight text-[var(--text-1)] mb-4">Everything your franchise needs</h2>
-            <p className="text-[var(--text-2)] max-w-2xl mx-auto">One platform to automate your front desk, capture every lead, and keep multiple franchise locations perfectly in sync.</p>
+            <p className="text-[var(--text-2)] max-w-2xl mx-auto">One platform to answer every call, capture every lead, and follow up automatically — by voice and SMS.</p>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -1314,8 +1187,48 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Agent Library ── */}
+      <section id="agents" className="py-24 px-6 relative z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-14">
+            <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--accent)] mb-3">Agent Library</p>
+            <h2 className="text-4xl md:text-5xl font-display font-bold tracking-tight text-[var(--text-1)] mb-4">One number. A team of AI agents.</h2>
+            <p className="text-[var(--text-2)] max-w-2xl mx-auto">Beyond the receptionist, provision role-based AI callers — each speaks from your knowledge base. Outbound agents stay within a monthly call budget you control.</p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              { icon: Phone,        name: 'Receptionist',         dir: 'inbound',  desc: 'Answers inbound calls, handles questions, and books trials/appointments.' },
+              { icon: PhoneCall,    name: 'Lead Follow-up',       dir: 'outbound', desc: "Calls leads who enquired but didn't book, re-engages them and books a trial." },
+              { icon: Clock,        name: 'Appointment Reminder', dir: 'outbound', desc: 'Confirms upcoming bookings to cut no-shows, and reschedules if needed.' },
+              { icon: Sparkles,     name: 'Feedback & Review',    dir: 'outbound', desc: 'Calls after a visit to collect feedback and invite a Google review.' },
+              { icon: ArrowUpRight, name: 'Win-back',             dir: 'outbound', desc: 'Re-engages cold or lapsed leads with a friendly, low-pressure check-in.' },
+              { icon: Moon,         name: 'After-hours',          dir: 'inbound',  desc: 'Handles calls when you are closed — answers and takes a callback message.' },
+            ].map((a) => (
+              <div key={a.name} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 hover:border-[var(--accent)]/50 hover:shadow-[var(--shadow-lg)] transition-all duration-300 group">
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-xl bg-[var(--accent-tint)] flex items-center justify-center border border-[var(--accent)]/10 group-hover:bg-[var(--accent)] transition-colors duration-300">
+                    <a.icon size={20} className="text-[var(--accent)] group-hover:text-white transition-colors duration-300" />
+                  </div>
+                  <span className="font-display font-bold uppercase text-[8px] tracking-[0.14em] px-2 py-1 rounded-full"
+                    style={{
+                      color: a.dir === 'inbound' ? 'var(--accent)' : 'var(--live)',
+                      background: a.dir === 'inbound' ? 'var(--accent-tint)' : 'rgba(0,232,122,0.08)',
+                      border: `1px solid ${a.dir === 'inbound' ? 'var(--accent)' : 'var(--live)'}33`,
+                    }}>
+                    {a.dir}
+                  </span>
+                </div>
+                <h3 className="font-display font-bold text-[15px] text-[var(--text-1)] mb-2 group-hover:text-[var(--accent)] transition-colors">{a.name}</h3>
+                <p className="text-xs text-[var(--text-3)] leading-relaxed">{a.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── Live Demo ── */}
-      <section id="demo" className="py-24 px-6 relative z-10">
+      <section id="demo" className="py-24 px-6 bg-[var(--surface-2)] border-y border-[var(--border)] relative z-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
@@ -1366,50 +1279,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Testimonials ── */}
-      <section className="py-24 px-6 bg-[var(--surface-2)] border-y border-[var(--border)] relative z-10">
-        <div className="absolute inset-0 bg-micro-grid opacity-[0.04] pointer-events-none" />
-        <div ref={testimonialsView.ref} className="max-w-7xl mx-auto relative z-10">
-          <div className={`text-center mb-16 transition-all duration-700 ${testimonialsView.inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <p className="font-display font-bold uppercase text-[10px] tracking-widest text-[var(--accent)] mb-3">Real results</p>
-            <h2 className="text-4xl md:text-5xl font-display font-bold tracking-tight text-[var(--text-1)] mb-4">
-              Franchise owners love Blueslate
-            </h2>
-            <p className="text-[var(--text-2)] max-w-xl mx-auto">Real results from real franchise operators — not cherry-picked edge cases.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {testimonials.map((t, i) => (
-              <div key={i} className={`transition-all duration-700 ${testimonialsView.inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
-                style={{ transitionDelay: `${i * 0.15}s` }}>
-                <TiltCard className="p-8 h-full bg-[var(--surface)] flex flex-col">
-                  {/* Stars */}
-                  <div className="flex gap-1 mb-4">
-                    {[...Array(t.stars)].map((_, j) => <Star key={j} size={13} className="fill-[var(--accent-2)] text-[var(--accent-2)]" />)}
-                  </div>
-                  <p className="text-sm text-[var(--text-2)] leading-relaxed mb-6 flex-1 italic">&ldquo;{t.quote}&rdquo;</p>
-                  <div className="flex items-center justify-between pt-5 border-t border-[var(--border)]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-[var(--accent)] flex items-center justify-center text-white font-display font-bold text-sm shadow-sm">
-                        {t.avatar}
-                      </div>
-                      <div>
-                        <p className="font-display font-bold text-[11px] uppercase tracking-widest text-[var(--text-1)]">{t.name}</p>
-                        <p className="text-[10px] text-[var(--text-3)]">{t.role}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-display font-bold text-xl text-[var(--accent)]">{t.metric}</p>
-                      <p className="text-[9px] font-display uppercase tracking-widest text-[var(--text-3)]">{t.metricLabel}</p>
-                    </div>
-                  </div>
-                </TiltCard>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Final CTA ── */}
       <section className="py-24 px-6 relative z-10 overflow-hidden">
         <div ref={ctaView.ref} className="max-w-4xl mx-auto text-center relative">
@@ -1425,7 +1294,7 @@ export default function LandingPage() {
               Ready to stop losing leads<br />to missed calls?
             </h2>
             <p className="text-lg text-[var(--text-2)] mb-10 max-w-2xl mx-auto">
-              Join 200+ franchise owners who trust Blueslate to handle every inbound call — perfectly, every time.
+              Set up your AI receptionist, point your number at it, and let it answer every call and capture every lead — free while we&apos;re in pilot.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a href="/register" className="btn-primary py-4 px-10 text-sm group overflow-hidden relative inline-flex items-center shadow-[0_0_30px_rgba(232,93,63,0.4)] hover:shadow-[0_0_50px_rgba(232,93,63,0.6)]">
@@ -1475,7 +1344,7 @@ export default function LandingPage() {
             {[
               { title: 'Product', links: [['#features', 'Features'], ['#how-it-works', 'How it Works'], ['#demo', 'Live Demo']] },
               { title: 'Company', links: [['#', 'About'], ['#', 'Blog'], ['#', 'Careers'], ['mailto:sales@blueslate.ai', 'Contact']] },
-              { title: 'Legal', links: [['#', 'Privacy Policy'], ['#', 'Terms of Service'], ['#', 'Security'], ['#', 'HIPAA Compliance']] },
+              { title: 'Legal', links: [['#', 'Privacy Policy'], ['#', 'Terms of Service']] },
             ].map((col) => (
               <div key={col.title}>
                 <p className="font-display font-bold uppercase tracking-widest text-[9px] text-[var(--text-3)] mb-4">{col.title}</p>

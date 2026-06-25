@@ -136,6 +136,7 @@ function TranscriptDrawer({
           toNumber: lead.caller_phone,
           toName:   lead.caller_name  ?? undefined,
           interest: lead.core_interest ?? undefined,
+          role:     'follow_up',
         }),
       })
       if (res.ok) {
@@ -404,9 +405,11 @@ export default function LeadsDashboard({
         const res = await fetch('/api/vapi/outbound', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ toNumber: lead.caller_phone, toName: lead.caller_name ?? undefined, interest: lead.core_interest ?? undefined }),
+          body:    JSON.stringify({ toNumber: lead.caller_phone, toName: lead.caller_name ?? undefined, interest: lead.core_interest ?? undefined, role: 'follow_up' }),
         })
         if (!res.ok) errors++
+        // Monthly call budget exhausted — stop rather than firing more denied calls.
+        if (res.status === 429) { setCallAllProg(prev => ({ ...prev, errors })); break }
       } catch { errors++ }
       setCallAllProg(prev => ({ ...prev, done: prev.done + 1, errors }))
       await new Promise(r => setTimeout(r, 800))

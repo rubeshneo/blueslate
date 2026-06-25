@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import type { BusinessHoursConfig } from '@/lib/supabase'
+import { getRoleTemplate, type AgentRole } from '@/lib/agent-templates'
 
 const VAPI_API = 'https://api.vapi.ai'
 
@@ -356,6 +357,7 @@ export async function makeOutboundCall(
   toNumber: string,
   toName?: string,
   interest?: string,
+  overrideAgentVapiId?: string, // use a specific role agent's assistant (e.g. follow_up)
 ): Promise<{ callId: string }> {
   const apiKey = process.env.VAPI_API_KEY
   if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
@@ -373,7 +375,10 @@ export async function makeOutboundCall(
 
   const row = tenant as TenantOutboundRow
 
-  if (!row.vapi_agent_id || !row.vapi_phone_number_id) {
+  // Outbound calls dial out through the tenant's number, but can be voiced by any
+  // provisioned role agent (falls back to the tenant's main assistant).
+  const assistantId = overrideAgentVapiId ?? row.vapi_agent_id
+  if (!assistantId || !row.vapi_phone_number_id) {
     throw new Error('Tenant has no Vapi assistant — provision first')
   }
 
@@ -395,7 +400,7 @@ export async function makeOutboundCall(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      assistantId:   row.vapi_agent_id,
+      assistantId:   assistantId,
       phoneNumberId: row.vapi_phone_number_id,
       // Attribute the resulting end-of-call-report to this tenant (webhook reads call.metadata.tenant_id).
       metadata: { tenant_id: tenantId },
@@ -418,4 +423,153 @@ export async function makeOutboundCall(
   const callData = await callRes.json() as VapiCallResponse
 
   return { callId: callData.id }
+}
+
+// ── Agent Library ───────────────────────────────────────────────────────────
+// Multiple role-based AI callers per tenant (receptionist, follow-up, reminder…),
+// each its own Vapi assistant, persisted in the `agents` table.
+
+export interface TenantAgent {
+  id:            string
+  tenant_id:     string
+  role:          string
+  name:          string
+  direction:     string
+  vapi_agent_id: string | null
+  is_active:     boolean
+  created_at:    string
+}
+
+export async function listTenantAgents(tenantId: string): Promise<TenantAgent[]> {
+  const { data, error } = await supabaseAdmin
+    .from('agents')
+    .select('id, tenant_id, role, name, direction, vapi_agent_id, is_active, created_at')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as TenantAgent[]
+}
+
+// Returns a provisioned, active assistant id for a role, or null if none exists.
+export async function resolveAgentVapiId(tenantId: string, role: AgentRole): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from('agents')
+    .select('vapi_agent_id')
+    .eq('tenant_id', tenantId)
+    .eq('role', role)
+    .eq('is_active', true)
+    .not('vapi_agent_id', 'is', null)
+    .maybeSingle()
+  return (data?.vapi_agent_id as string | null) ?? null
+}
+
+// Provision (or re-provision) a role-based agent: builds the role's prompt from the
+// tenant's knowledge, creates a dedicated Vapi assistant, and upserts the agents row.
+export async function provisionAgentForTenant(tenantId: string, role: AgentRole): Promise<TenantAgent> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!apiKey) throw new Error('VAPI_API_KEY is not configured')
+  const demoId = process.env.VAPI_ASSISTANT_ID
+  if (!demoId) throw new Error('VAPI_ASSISTANT_ID is not configured')
+
+  const template = getRoleTemplate(role)
+  if (!template) throw new Error(`Unknown agent role: ${role}`)
+
+  // Tenant identity + knowledge
+  const { data: tenant, error: tenantErr } = await supabaseAdmin
+    .from('tenants')
+    .select('id, name, agent_name')
+    .eq('id', tenantId)
+    .single()
+  if (tenantErr || !tenant) throw new Error(`Tenant not found: ${tenantId}`)
+
+  const agentName    = template.defaultName || (tenant.agent_name as string | null) || 'Sage'
+  const businessName = (tenant.name as string) || 'our business'
+
+  const { data: knowledgeRows } = await supabaseAdmin
+    .from('knowledge_context')
+    .select('structured_data')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+
+  const context = (knowledgeRows ?? [])
+    .map((row) => {
+      const sd = row.structured_data
+      return sd && typeof sd === 'object' ? buildContextBlock(sd as Record<string, unknown>) : ''
+    })
+    .filter(Boolean)
+    .join('\n\n')
+
+  const ctx          = { agentName, businessName, context }
+  const systemPrompt = template.systemPrompt(ctx)
+  const firstMessage = template.firstMessage(ctx)
+
+  // Clone model/voice from the demo assistant for consistent voice quality.
+  const demoRes = await fetch(`${VAPI_API}/assistant/${demoId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!demoRes.ok) {
+    const err = await demoRes.text().catch(() => '')
+    throw new Error(`Vapi GET demo assistant ${demoRes.status}: ${err.slice(0, 200)}`)
+  }
+  const demo = await demoRes.json() as VapiAssistantResponse
+
+  const serverConfig = tenantServerConfig()
+  const createRes = await fetch(`${VAPI_API}/assistant`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name:         `${businessName} — ${template.label}`,
+      firstMessage,
+      metadata:     { tenant_id: tenantId, role },
+      ...(serverConfig ? { server: serverConfig } : {}),
+      model: {
+        ...((demo.model ?? {}) as Record<string, unknown>),
+        messages: [{ role: 'system', content: systemPrompt }],
+      },
+      voice: (demo.voice ?? {}) as Record<string, unknown>,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!createRes.ok) {
+    const err = await createRes.text().catch(() => '')
+    throw new Error(`Vapi POST assistant ${createRes.status}: ${err.slice(0, 300)}`)
+  }
+  const assistant = await createRes.json() as VapiAssistantResponse
+
+  // Upsert the agents row (one per tenant+role).
+  const { data: existing } = await supabaseAdmin
+    .from('agents')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('role', role)
+    .maybeSingle()
+
+  const fields = {
+    tenant_id:     tenantId,
+    role,
+    name:          agentName,
+    direction:     template.direction,
+    vapi_agent_id: assistant.id,
+    first_message: firstMessage,
+    is_active:     true,
+    updated_at:    new Date().toISOString(),
+  }
+
+  let saved: TenantAgent
+  if (existing?.id) {
+    const { data, error } = await supabaseAdmin
+      .from('agents').update(fields).eq('id', existing.id)
+      .select('id, tenant_id, role, name, direction, vapi_agent_id, is_active, created_at').single()
+    if (error) throw error
+    saved = data as TenantAgent
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from('agents').insert(fields)
+      .select('id, tenant_id, role, name, direction, vapi_agent_id, is_active, created_at').single()
+    if (error) throw error
+    saved = data as TenantAgent
+  }
+
+  return saved
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, User, Bell, Settings, Brain, Phone, Users, BarChart2, MessageSquare, Shield } from 'lucide-react'
+import { LayoutDashboard, User, Bell, Settings, Brain, Phone, Users, BarChart2, MessageSquare, Shield, Bot } from 'lucide-react'
 
 const mainNav = [
   { href: '/',          label: 'Dashboard',    icon: LayoutDashboard },
@@ -13,6 +13,7 @@ const featureNav = [
   { href: '/knowledge',            label: 'Knowledge',     icon: Brain },
   { href: '/knowledge/playground', label: 'AI Playground', icon: MessageSquare },
   { href: '/voice',                label: 'Voice Agent',   icon: Phone },
+  { href: '/agents',               label: 'AI Agents',     icon: Bot },
   { href: '/leads',                label: 'Leads',         icon: Users },
 ]
 
