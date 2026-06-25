@@ -4,6 +4,7 @@ import { parseTranscript } from '@/lib/claude'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendNurtureSms } from '@/lib/sms'
 import { createNotification } from '@/lib/redis'
+import { buildPersonalizedInboundAssistant } from '@/lib/vapi-provisioning'
 
 // ── Webhook verification ──────────────────────────────────────────────────────
 // Accepts two modes depending on how Vapi is configured:
@@ -85,6 +86,29 @@ export async function POST(req: NextRequest) {
 
     const body = JSON.parse(rawBody)
     const { message } = body
+
+    // ── Inbound personalization ──────────────────────────────────────────────
+    // Vapi asks who should answer this call. Return the tenant's assistant with a
+    // system prompt + opener personalized to the caller's history. Only fires when
+    // a number is configured for dynamic routing; static-assistant numbers skip it.
+    if (message?.type === 'assistant-request') {
+      const calledNumberId = message.phoneNumber?.id ?? message.call?.phoneNumberId ?? null
+      const callerNumber   = message.call?.customer?.number ?? null
+      try {
+        const cfg = await buildPersonalizedInboundAssistant(calledNumberId, callerNumber)
+        if (!cfg) return NextResponse.json({}) // let Vapi use its default
+        return NextResponse.json({
+          assistantId: cfg.assistantId,
+          assistantOverrides: {
+            firstMessage: cfg.firstMessage,
+            model: { messages: [{ role: 'system', content: cfg.systemPrompt }] },
+          },
+        })
+      } catch (e) {
+        console.error('[Vapi] assistant-request personalization failed:', e)
+        return NextResponse.json({}) // fail open → default assistant
+      }
+    }
 
     if (!message || message.type !== 'end-of-call-report') {
       return NextResponse.json({ received: true })

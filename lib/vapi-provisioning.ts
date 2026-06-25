@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import type { BusinessHoursConfig } from '@/lib/supabase'
 import { getRoleTemplate, type AgentRole } from '@/lib/agent-templates'
+import { buildCallerContext } from '@/lib/caller-context'
 
 const VAPI_API = 'https://api.vapi.ai'
 
@@ -15,6 +16,16 @@ function tenantServerConfig(): Record<string, unknown> | undefined {
     url: `${appUrl}/api/webhooks/vapi`,
     ...(secret ? { secret } : {}),
   }
+}
+
+// How a provisioned number routes INBOUND calls:
+//  - Production (public webhook URL): route to our server → Vapi sends an
+//    `assistant-request` per call, which we answer with a caller-personalized
+//    assistant. No static assistant on the number.
+//  - Local / no public URL: fall back to a static assistant so inbound still works.
+function numberRouting(assistantId: string): Record<string, unknown> {
+  const server = tenantServerConfig()
+  return server ? { server } : { assistantId }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -233,7 +244,7 @@ export async function provisionTenantVapi(tenantId: string): Promise<ProvisionRe
   const phoneRes = await fetch(`${VAPI_API}/phone-number/buy`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'vapi', areaCode: '415', assistantId: assistant.id }),
+    body: JSON.stringify({ provider: 'vapi', areaCode: '415', ...numberRouting(assistant.id) }),
     signal: AbortSignal.timeout(30_000),
   })
 
@@ -274,7 +285,7 @@ export async function importTwilioNumber(
       number:           twilioNumber,
       twilioAccountSid,
       twilioAuthToken,
-      assistantId:      assistant.id,
+      ...numberRouting(assistant.id),
     }),
     signal: AbortSignal.timeout(30_000),
   })
@@ -322,7 +333,7 @@ export async function linkExistingVapiNumber(
   const patchRes = await fetch(`${VAPI_API}/phone-number/${vapiPhoneNumberId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assistantId: assistant.id }),
+    body: JSON.stringify({ ...numberRouting(assistant.id) }),
     signal: AbortSignal.timeout(10_000),
   })
   if (!patchRes.ok) {
@@ -383,12 +394,19 @@ export async function makeOutboundCall(
   }
 
   const agentName = row.agent_name ?? 'Sage'
-  const callerDesc = toName ? toName : 'a customer'
-  const interestNote = interest
-    ? ` They previously expressed interest in: ${interest}.`
-    : ''
 
-  const firstMessage = `Hi${toName ? ` ${toName}` : ''}, this is ${agentName} calling from ${row.name}. I'm following up on your recent inquiry.${interestNote} Is now a good time to chat?`
+  // Personalize from this caller's real history (name + past interest), falling
+  // back to whatever was passed in.
+  const caller = await buildCallerContext(tenantId, toNumber)
+  const knownName = caller.name ?? toName
+  const callerDesc = knownName ? knownName : 'a customer'
+  const interestNote = interest
+    ? ` I'm following up on your interest in ${interest}.`
+    : caller.isReturning
+      ? ` I'm following up on your recent enquiry with us.`
+      : ` I'm following up on your recent enquiry.`
+
+  const firstMessage = `Hi${knownName ? ` ${knownName}` : ''}, this is ${agentName} from ${row.name}.${interestNote} Is now a good time to chat?`
 
   // ── 2. POST to Vapi /call ─────────────────────────────────────────────────
   type VapiCallResponse = { id: string; [key: string]: unknown }
@@ -572,4 +590,58 @@ export async function provisionAgentForTenant(tenantId: string, role: AgentRole)
   }
 
   return saved
+}
+
+// ── Inbound personalization ─────────────────────────────────────────────────
+// Used by the Vapi `assistant-request` webhook: when a call comes in to a tenant's
+// number, look up the caller by phone and return that tenant's assistant with a
+// system prompt + opener personalized to the caller's history. Returns null if the
+// tenant/number can't be resolved (Vapi then falls back to its default).
+export interface InboundAssistantConfig {
+  assistantId:  string
+  firstMessage: string
+  systemPrompt: string
+}
+
+export async function buildPersonalizedInboundAssistant(
+  calledNumberId: string | null,
+  callerNumber:   string | null,
+): Promise<InboundAssistantConfig | null> {
+  if (!calledNumberId) return null
+
+  const { data: tenant } = await supabaseAdmin
+    .from('tenants')
+    .select('id, name, agent_name, agent_greeting, business_hours, vapi_agent_id')
+    .eq('vapi_phone_number_id', calledNumberId)
+    .maybeSingle()
+
+  if (!tenant?.vapi_agent_id) return null
+
+  const { data: knowledgeRows } = await supabaseAdmin
+    .from('knowledge_context')
+    .select('structured_data')
+    .eq('tenant_id', tenant.id)
+    .eq('is_active', true)
+
+  const context = (knowledgeRows ?? [])
+    .map((row) => {
+      const sd = row.structured_data
+      return sd && typeof sd === 'object' ? buildContextBlock(sd as Record<string, unknown>) : ''
+    })
+    .filter(Boolean)
+    .join('\n\n')
+
+  const agentName = (tenant.agent_name as string | null) ?? 'Sage'
+  const greeting  = (tenant.agent_greeting as string | null)
+    ?? `Thank you for calling ${tenant.name}! This is ${agentName}. How can I help you today?`
+  const businessHours = (tenant.business_hours as BusinessHoursConfig | null) ?? null
+
+  const basePrompt = buildTenantSystemPrompt(agentName, greeting, context, businessHours)
+  const caller     = await buildCallerContext(tenant.id, callerNumber)
+
+  return {
+    assistantId:  tenant.vapi_agent_id as string,
+    firstMessage: caller.opener ?? greeting,
+    systemPrompt: basePrompt + caller.block,
+  }
 }
