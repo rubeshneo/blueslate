@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   LayoutDashboard, User, Bell, Settings, Brain,
-  Phone, Users, BarChart2, MessageSquare, Menu, X,
+  Phone, Users, BarChart2, MessageSquare, Menu, X, Bot,
 } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import NotificationBell from './NotificationBell'
@@ -20,6 +20,7 @@ const featureNav = [
   { href: '/knowledge',            label: 'Knowledge',     icon: Brain },
   { href: '/knowledge/playground', label: 'AI Playground', icon: MessageSquare },
   { href: '/voice',                label: 'Voice Agent',   icon: Phone },
+  { href: '/agents',               label: 'AI Agents',     icon: Bot },
   { href: '/leads',                label: 'Leads',         icon: Users },
 ]
 const accountNav = [
@@ -34,6 +35,7 @@ const ROUTES: Record<string, { title: string; subtitle: string }> = {
   '/knowledge':              { title: 'Knowledge Base', subtitle: 'Franchise knowledge extraction' },
   '/knowledge/playground':   { title: 'AI Playground',  subtitle: 'Simulate parent inquiries' },
   '/voice':                  { title: 'Voice Agent',    subtitle: 'Real-time AI receptionist via Vapi' },
+  '/agents':                 { title: 'AI Agents',      subtitle: 'Role-based AI caller library' },
   '/leads':                  { title: 'Leads',          subtitle: 'Auto-parsed leads from call transcripts' },
   '/profile':                { title: 'Profile',        subtitle: 'Account identity' },
   '/notifications':          { title: 'Notifications',  subtitle: 'All activity and alerts' },
