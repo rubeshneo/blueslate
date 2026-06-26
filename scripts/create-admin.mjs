@@ -3,6 +3,7 @@
 // Usage:  node scripts/create-admin.mjs <email> [password]
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -20,7 +21,7 @@ const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 console.log('Supabase project:', url)
 
 const email = (process.argv[2] || 'rubesh.kumar@neoaistriq.com').toLowerCase()
-const password = process.argv[3] || 'Blueslate#2026'
+const password = process.argv[3] || (randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '') + 'Aa9!')
 
 const admin = createClient(url, svcKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
