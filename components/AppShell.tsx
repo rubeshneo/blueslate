@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   LayoutDashboard, User, Bell, Settings, Brain,
-  Phone, Users, BarChart2, MessageSquare, Menu, X, Bot,
+  Phone, Users, BarChart2, MessageSquare, Menu, X, Bot, Shield,
 } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import NotificationBell from './NotificationBell'
@@ -28,6 +28,12 @@ const accountNav = [
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/settings',      label: 'Settings',      icon: Settings },
 ]
+// Pure platform-admin nav — franchise-operational tools are hidden for the creator.
+const adminNav = [
+  { href: '/admin',         label: 'Admin Panel',  icon: Shield },
+  { href: '/profile',       label: 'Profile',       icon: User },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
+]
 
 const ROUTES: Record<string, { title: string; subtitle: string }> = {
   '/':                       { title: 'Dashboard',      subtitle: 'Overview & live metrics' },
@@ -40,6 +46,7 @@ const ROUTES: Record<string, { title: string; subtitle: string }> = {
   '/profile':                { title: 'Profile',        subtitle: 'Account identity' },
   '/notifications':          { title: 'Notifications',  subtitle: 'All activity and alerts' },
   '/settings':               { title: 'Settings',       subtitle: 'Agent configuration' },
+  '/admin':                  { title: 'Blueslate',      subtitle: 'All tenants & platform activity' },
 }
 
 // ── NavItem ───────────────────────────────────────────────────────────────────
@@ -96,7 +103,7 @@ function NavSection({
 }
 
 // ── SidebarContent ────────────────────────────────────────────────────────────
-function SidebarContent({ onClose }: { onClose?: () => void }) {
+function SidebarContent({ onClose, isAdmin }: { onClose?: () => void; isAdmin?: boolean }) {
   return (
     <>
       {/* Logo */}
@@ -121,11 +128,17 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Nav */}
+      {/* Nav — platform admins get a focused nav; franchise owners get the full toolset */}
       <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
-        <NavSection label="Overview" items={mainNav}    onClick={onClose} />
-        <NavSection label="Features" items={featureNav} onClick={onClose} />
-        <NavSection label="Account"  items={accountNav} onClick={onClose} />
+        {isAdmin ? (
+          <NavSection label="Admin" items={adminNav} onClick={onClose} />
+        ) : (
+          <>
+            <NavSection label="Overview" items={mainNav}    onClick={onClose} />
+            <NavSection label="Features" items={featureNav} onClick={onClose} />
+            <NavSection label="Account"  items={accountNav} onClick={onClose} />
+          </>
+        )}
       </nav>
 
       {/* Footer */}
@@ -144,9 +157,9 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
 
 // ── AppShell ─────────────────────────────────────────────────────────────────
 export default function AppShell({
-  email, name, avatarUrl, children,
+  email, name, avatarUrl, isAdmin, children,
 }: {
-  email: string; name: string; avatarUrl?: string | null; children: React.ReactNode
+  email: string; name: string; avatarUrl?: string | null; isAdmin?: boolean; children: React.ReactNode
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const pathname = usePathname()
@@ -168,7 +181,7 @@ export default function AppShell({
         className="hidden md:flex w-[240px] shrink-0 h-screen flex-col"
         style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)' }}
       >
-        <SidebarContent />
+        <SidebarContent isAdmin={isAdmin} />
       </aside>
 
       {/* ── Mobile backdrop ──────────────────────────────────────────────── */}
@@ -187,7 +200,7 @@ export default function AppShell({
           transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
         }}
       >
-        <SidebarContent onClose={() => setDrawerOpen(false)} />
+        <SidebarContent onClose={() => setDrawerOpen(false)} isAdmin={isAdmin} />
       </aside>
 
       {/* ── Main area — only this scrolls ───────────────────────────────── */}

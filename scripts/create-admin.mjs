@@ -1,9 +1,8 @@
-// One-off: create (or repair) a confirmed admin user, bypassing email OTP.
+// One-off: create (or repair) a confirmed admin user, bypassing email OTP,
+// then VERIFY the credentials actually work via a real sign-in.
 // Usage:  node scripts/create-admin.mjs <email> [password]
-// Reads Supabase creds from .env.local.
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -15,31 +14,35 @@ const env = Object.fromEntries(
     }),
 )
 
-const url = env.NEXT_PUBLIC_SUPABASE_URL
-const key = env.SUPABASE_SERVICE_ROLE_KEY
-if (!url || !key) { console.error('Missing Supabase env'); process.exit(1) }
+const url     = env.NEXT_PUBLIC_SUPABASE_URL
+const svcKey  = env.SUPABASE_SERVICE_ROLE_KEY
+const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+console.log('Supabase project:', url)
 
 const email = (process.argv[2] || 'rubesh.kumar@neoaistriq.com').toLowerCase()
-const password = process.argv[3] || (randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '') + 'Aa9!')
+const password = process.argv[3] || 'Blueslate#2026'
 
-const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+const admin = createClient(url, svcKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
-const { data: created, error } = await supabase.auth.admin.createUser({
-  email, password, email_confirm: true,
-  user_metadata: { full_name: 'Rubesh Kumar S' },
-})
+// Find existing user (any casing)
+const { data: list } = await admin.auth.admin.listUsers()
+const existing = list?.users?.find((u) => u.email?.toLowerCase() === email)
 
-if (error) {
-  const { data: list } = await supabase.auth.admin.listUsers()
-  const existing = list?.users?.find((u) => u.email?.toLowerCase() === email)
-  if (existing) {
-    await supabase.auth.admin.updateUserById(existing.id, { password, email_confirm: true })
-    console.log(`✓ Existing user repaired & confirmed: ${email}`)
-  } else {
-    console.error('✗ Failed:', error.message)
-    process.exit(1)
-  }
+if (existing) {
+  const { error } = await admin.auth.admin.updateUserById(existing.id, {
+    password, email_confirm: true,
+  })
+  console.log(error ? `✗ update failed: ${error.message}` : `✓ updated user ${existing.id}`)
 } else {
-  console.log(`✓ Created & confirmed: ${created.user.email}`)
+  const { data, error } = await admin.auth.admin.createUser({
+    email, password, email_confirm: true, user_metadata: { full_name: 'Rubesh Kumar S' },
+  })
+  console.log(error ? `✗ create failed: ${error.message}` : `✓ created user ${data.user.id}`)
 }
-console.log(`\n  Email:    ${email}\n  Password: ${password}\n\n  → Log in at /admin-login (change the password after first login).`)
+
+// Verify: real sign-in with the anon key (same path the app uses)
+const pub = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
+const { data: signIn, error: signErr } = await pub.auth.signInWithPassword({ email, password })
+console.log('\n── VERIFY sign-in ──')
+console.log(signErr ? `✗ sign-in FAILED: ${signErr.message}` : `✓ sign-in OK as ${signIn.user.email}`)
+console.log(`\n  Email:    ${email}\n  Password: ${password}\n`)
