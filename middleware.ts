@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAdminEmail } from '@/lib/admin'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -26,8 +27,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
-  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'rubesh.kumar@neoaistriq.com').toLowerCase()
-  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL
+  const isAdmin = isAdminEmail(user?.email)
 
   const isAdminLogin = pathname === '/admin-login'
   const isAdminArea  = pathname === '/admin' || pathname.startsWith('/admin/')

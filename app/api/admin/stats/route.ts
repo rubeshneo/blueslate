@@ -1,13 +1,12 @@
 import { createClient } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase'
-
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'Rubesh.kumar@neoaistriq.com').toLowerCase()
+import { isAdminEmail } from '@/lib/admin'
 
 export async function GET() {
   // ── Auth guard — admin only ──────────────────────────────────────────────────
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL) {
+  if (!isAdminEmail(user?.email)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase'
-
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'Rubesh.kumar@neoaistriq.com').toLowerCase()
+import { isAdminEmail } from '@/lib/admin'
 
 export async function PATCH(
   req: NextRequest,
@@ -10,7 +9,7 @@ export async function PATCH(
 ) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
