@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Eye, EyeOff, Shield } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 
@@ -105,9 +106,15 @@ export default function AdminLoginPage() {
           </div>
 
           <div>
-            <label className="font-display font-bold uppercase" style={{ display: 'block', fontSize: '9px', letterSpacing: '0.2em', color: 'var(--text-3)', marginBottom: '7px' }}>
-              Password
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '7px' }}>
+              <label className="font-display font-bold uppercase" style={{ fontSize: '9px', letterSpacing: '0.2em', color: 'var(--text-3)' }}>
+                Password
+              </label>
+              <Link href="/forgot-password" className="font-display uppercase"
+                style={{ fontSize: '8px', letterSpacing: '0.14em', color: 'var(--accent)', textDecoration: 'none' }}>
+                Forgot?
+              </Link>
+            </div>
             <div style={{ position: 'relative' }}>
               <input
                 type={showPass ? 'text' : 'password'}
