@@ -28,6 +28,12 @@ function numberRouting(assistantId: string): Record<string, unknown> {
   return server ? { server } : { assistantId }
 }
 
+// Vapi caps assistant names at 40 characters.
+function clampAssistantName(name: string): string {
+  const n = name.trim()
+  return n.length <= 40 ? n : n.slice(0, 40).trim()
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -198,7 +204,7 @@ async function createAssistantForTenant(
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name:         `${tenant.name} — ${agentName}`,
+      name:         clampAssistantName(`${tenant.name} — ${agentName}`),
       firstMessage: greeting,
       // Stamp the tenant so the webhook can attribute calls even if assistant lookup ever fails.
       metadata:     { tenant_id: tenantId },
@@ -537,7 +543,7 @@ export async function provisionAgentForTenant(tenantId: string, role: AgentRole)
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name:         `${businessName} — ${template.label}`,
+      name:         clampAssistantName(`${businessName} — ${template.label}`),
       firstMessage,
       metadata:     { tenant_id: tenantId, role },
       ...(serverConfig ? { server: serverConfig } : {}),
