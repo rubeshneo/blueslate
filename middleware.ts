@@ -32,7 +32,8 @@ export async function middleware(request: NextRequest) {
   const isAdminLogin = pathname === '/admin-login'
   const isAdminArea  = pathname === '/admin' || pathname.startsWith('/admin/')
   const isAuthRoute  = pathname === '/login' || pathname === '/register'
-  const isPublic = isAuthRoute || isAdminLogin || pathname.startsWith('/api') || pathname.startsWith('/_next') || pathname === '/landing'
+  const isRecovery   = pathname === '/forgot-password' || pathname === '/reset-password'
+  const isPublic = isAuthRoute || isAdminLogin || isRecovery || pathname.startsWith('/api') || pathname.startsWith('/_next') || pathname === '/landing'
 
   if (!user && pathname === '/') {
     const url = request.nextUrl.clone()

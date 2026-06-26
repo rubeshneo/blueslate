@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
@@ -14,6 +14,14 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  // Surface messages redirected here from the auth callback.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error')
+    if (code === 'link_expired') setError('That reset link has expired or was already used. Please request a new one.')
+    else if (code === 'no_account') setError('No Blueslate account is linked to that login. Please create an account first.')
+    else if (code === 'oauth_error') setError('Sign-in failed. Please try again.')
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,15 +118,15 @@ export default function LoginPage() {
               >
                 Password
               </label>
-              <a
-                href="#"
+              <Link
+                href="/forgot-password"
                 className="font-display uppercase"
                 style={{ fontSize: '8px', letterSpacing: '0.14em', color: 'var(--accent)', textDecoration: 'none', transition: 'opacity 0.15s' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.7'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
               >
                 Forgot?
-              </a>
+              </Link>
             </div>
             <div style={{ position: 'relative' }}>
               <input
