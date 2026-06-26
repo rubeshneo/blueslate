@@ -86,7 +86,18 @@ function TranscriptDrawer({
   const [outcomeUpdating, setOutcomeUpdating] = useState(false)
   const [callbackState, setCallbackState]     = useState<CallbackState>('idle')
   const [callbackError, setCallbackError]     = useState('')
+  const [callRole, setCallRole]               = useState('follow_up')
+  const [menuOpen, setMenuOpen]               = useState(false)
   const [visible, setVisible]                 = useState(false)
+
+  // Outbound AI agents that can call a lead (resolved server-side; falls back to
+  // the main assistant if a role isn't provisioned yet).
+  const OUTBOUND_AGENTS = [
+    { role: 'follow_up', label: 'Follow-up' },
+    { role: 'reminder',  label: 'Reminder' },
+    { role: 'review',    label: 'Feedback / Review' },
+    { role: 'winback',   label: 'Win-back' },
+  ]
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
@@ -124,8 +135,10 @@ function TranscriptDrawer({
     }
   }
 
-  const handleCallback = async () => {
+  const handleCallback = async (role: string) => {
     if (!lead.caller_phone) return
+    setMenuOpen(false)
+    setCallRole(role)
     setCallbackState('placing')
     setCallbackError('')
     try {
@@ -136,7 +149,7 @@ function TranscriptDrawer({
           toNumber: lead.caller_phone,
           toName:   lead.caller_name  ?? undefined,
           interest: lead.core_interest ?? undefined,
-          role:     'follow_up',
+          role,
         }),
       })
       if (res.ok) {
@@ -242,27 +255,47 @@ function TranscriptDrawer({
             {cfg.label}
           </div>
 
-          {/* Callback button */}
+          {/* Call-with-AI-agent picker */}
           {lead.caller_phone && (
-            <button
-              onClick={handleCallback}
-              disabled={callbackState === 'placing' || callbackState === 'placed'}
-              title={callbackState === 'placed' ? 'Call placed' : 'Call this lead back'}
-              className={`flex items-center gap-2 px-3 py-2 border font-display font-bold uppercase text-[10px] tracking-[0.1em] transition-all rounded flex-shrink-0 ${
-                callbackState === 'placed'  ? 'border-[var(--live)] text-[var(--live)] bg-[var(--live)]/10' :
-                callbackState === 'error'   ? 'border-[var(--danger)] text-[var(--danger)]' :
-                callbackState === 'placing' ? 'border-[var(--accent)] text-[var(--accent)] opacity-70' :
-                                              'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
-              }`}
-            >
-              {callbackState === 'placing' ? <Loader2 size={12} className="animate-spin" /> :
-               callbackState === 'placed'  ? <CheckCircle size={12} /> :
-               callbackState === 'error'   ? <AlertCircle size={12} /> :
-               <PhoneCall size={12} />}
-              {callbackState === 'placed'  ? 'Called' :
-               callbackState === 'placing' ? 'Calling' :
-               callbackState === 'error'   ? 'Failed' : 'Call Back'}
-            </button>
+            <div className="relative flex-shrink-0">
+              {menuOpen && <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />}
+              <button
+                onClick={() => { if (callbackState === 'placed' || callbackState === 'placing') return; setMenuOpen(o => !o) }}
+                disabled={callbackState === 'placing' || callbackState === 'placed'}
+                title={callbackState === 'placed'
+                  ? `Called with ${OUTBOUND_AGENTS.find(a => a.role === callRole)?.label ?? 'agent'}`
+                  : 'Call this lead with an AI agent'}
+                className={`flex items-center gap-2 px-3 py-2 border font-display font-bold uppercase text-[10px] tracking-[0.1em] transition-all rounded ${
+                  callbackState === 'placed'  ? 'border-[var(--live)] text-[var(--live)] bg-[var(--live)]/10' :
+                  callbackState === 'error'   ? 'border-[var(--danger)] text-[var(--danger)]' :
+                  callbackState === 'placing' ? 'border-[var(--accent)] text-[var(--accent)] opacity-70' :
+                                                'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                }`}
+              >
+                {callbackState === 'placing' ? <Loader2 size={12} className="animate-spin" /> :
+                 callbackState === 'placed'  ? <CheckCircle size={12} /> :
+                 callbackState === 'error'   ? <AlertCircle size={12} /> :
+                 <PhoneCall size={12} />}
+                {callbackState === 'placed'  ? 'Called' :
+                 callbackState === 'placing' ? 'Calling' :
+                 callbackState === 'error'   ? 'Retry' : 'Call With AI'}
+                {(callbackState === 'idle' || callbackState === 'error') && <span style={{ fontSize: '9px' }}>▾</span>}
+              </button>
+
+              {menuOpen && callbackState !== 'placing' && callbackState !== 'placed' && (
+                <div className="absolute right-0 mt-1.5 z-20 min-w-[190px] bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-[var(--shadow-lg)] overflow-hidden"
+                  style={{ animation: 'fade-up 0.15s ease-out both' }}>
+                  <p className="px-3 pt-2.5 pb-1.5 font-display font-bold uppercase text-[8px] tracking-[0.16em] text-[var(--text-3)]">Call with agent</p>
+                  {OUTBOUND_AGENTS.map(a => (
+                    <button key={a.role}
+                      onClick={() => handleCallback(a.role)}
+                      className="w-full text-left px-3 py-2.5 text-[11px] font-display text-[var(--text-2)] hover:bg-[var(--accent-tint)] hover:text-[var(--accent)] transition-colors flex items-center gap-2 border-t border-[var(--border)]">
+                      <PhoneCall size={11} /> {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
